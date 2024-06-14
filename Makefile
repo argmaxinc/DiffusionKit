@@ -1,4 +1,4 @@
-.PHONY: setup setup-huggingface-cli setup-model-repo download-model build build-cli test clean-package-caches
+.PHONY: setup setup-model-repo download-model format clean-package-caches
 
 PIP_COMMAND := pip3
 PYTHON_COMMAND := python3
@@ -22,6 +22,12 @@ setup:
 	@echo "Checking for trash..."
 	@which trash > /dev/null || (echo "Installing trash..." && brew install trash)
 	@echo "trash is installed."
+	@echo "Checking for swift-format..."
+	@which swift-format > /dev/null || (echo "Installing swift-format..." && brew install swift-format)
+	@echo "swift-format is installed."
+	@echo "Checking for pre-commit..."
+	@which pre-commit > /dev/null || (echo "Installing pre-commit..." && brew install pre-commit && pre-commit install)
+	@echo "pre-commit is installed."
 	@echo "Done 🚀"
 
 
@@ -45,6 +51,9 @@ download-model:
 	@echo "Downloading model $(MODEL)..."
 	@cd $(MODEL_REPO_DIR)/$(MODEL) && \
 	git lfs pull --include="*"
+
+format:
+	@pre-commit run --all-files
 
 clean-package-caches:
 	@trash ~/Library/Caches/org.swift.swiftpm/repositories
