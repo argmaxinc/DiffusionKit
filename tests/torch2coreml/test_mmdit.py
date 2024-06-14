@@ -47,6 +47,7 @@ class TestSD3MMDiT(argmaxtools_test_utils.CoreMLTestsMixin, unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        global TEST_SD3_CKPT_PATH
         cls.model_name = "MultiModalDiffusionTransformer"
         cls.test_output_names = ["denoiser_output"]
         cls.test_cache_dir = TEST_CACHE_DIR
@@ -60,7 +61,9 @@ class TestSD3MMDiT(argmaxtools_test_utils.CoreMLTestsMixin, unittest.TestCase):
             .eval()
         )
         logger.info("Initialized.")
-        TEST_SD3_CKPT_PATH = hf_hub_download(TEST_SD3_HF_REPO, "sd3_medium.safetensors")
+        TEST_SD3_CKPT_PATH = TEST_SD3_CKPT_PATH or hf_hub_download(
+            TEST_SD3_HF_REPO, "sd3_medium.safetensors"
+        )
         if TEST_SD3_CKPT_PATH is not None:
 
             logger.info(f"Loading SD3 model checkpoint from {TEST_SD3_CKPT_PATH}")
@@ -133,6 +136,9 @@ if __name__ == "__main__":
     parser.add_argument("--latent-size", default=TEST_LATENT_SIZE, type=int)
     args = parser.parse_args()
 
+    TEST_SD3_CKPT_PATH = (
+        args.sd3_ckpt_path if os.path.exists(args.sd3_ckpt_path) else None
+    )
     TEST_SD3_HF_REPO = args.sd3_ckpt_path
     TEST_LATENT_SIZE = args.latent_size
     TEST_CKPT_FILE_NAME = args.ckpt_file_name
