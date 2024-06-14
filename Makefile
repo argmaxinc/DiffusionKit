@@ -19,9 +19,12 @@ setup:
 	@echo "Checking for git-lfs..."
 	@which git-lfs > /dev/null || (echo "Installing git-lfs..." && brew install git-lfs)
 	@echo "git-lfs is installed."
-	@echo "Checking for trash..."
-	@which trash > /dev/null || (echo "Installing trash..." && brew install trash)
-	@echo "trash is installed."
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		which trash > /dev/null || (echo "Installing trash..." && brew install trash); \
+		echo "trash is installed."; \
+	else \
+		echo "Skipping trash installation (not macOS)."; \
+	fi
 	@echo "Checking for swift-format..."
 	@which swift-format > /dev/null || (echo "Installing swift-format..." && brew install swift-format)
 	@echo "swift-format is installed."
