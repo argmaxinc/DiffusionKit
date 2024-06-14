@@ -47,14 +47,17 @@ huggingface-cli login --token YOUR_HF_HUB_TOKEN
 **Step 2:** Prepare the denoise model (MMDiT) Core ML model files (`.mlpackage`)
 
 ```shell
-python -m tests.torch2coreml.test_mmdit --sd3-ckpt-path <path-to-sd3-mmdit.safetensors> --model-version {2b} -o <output-mlpackages-directory> --latent-size {64, 128}
+python -m tests.torch2coreml.test_mmdit --sd3-ckpt-path <path-to-sd3-mmdit.safetensors or model-version-string-from-hub> --model-version {2b} -o <output-mlpackages-directory> --latent-size {64, 128}
 ```
 
 **Step 3:** Prepare the VAE Decoder Core ML model files (`.mlpackage`)
 
 ```shell
-python -m tests.torch2coreml.test_vae --sd3-ckpt-path <path-to-sd3-mmdit.safetensors> -o <output-mlpackages-directory> --latent-size {64, 128}
+python -m tests.torch2coreml.test_vae --sd3-ckpt-path <path-to-sd3-mmdit.safetensors or model-version-string-from-hub> -o <output-mlpackages-directory> --latent-size {64, 128}
 ```
+
+Note:
+- `--sd3-ckpt-path` can be a path to a local `.safetensors` file or a HuggingFace repo (e.g. `stabilityai/stable-diffusion-3-medium`).
 </details>
 
 ## <a name="image-generation-with-python-mlx"></a> Image Generation with Python MLX
