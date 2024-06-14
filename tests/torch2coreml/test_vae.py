@@ -5,10 +5,10 @@
 
 import os
 import unittest
-import coremltools as ct
-
-import torch
 from typing import Dict
+
+import coremltools as ct
+import torch
 from argmaxtools import test_utils as argmaxtools_test_utils
 from argmaxtools.utils import get_fastest_device, get_logger
 from huggingface_hub import hf_hub_download

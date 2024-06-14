@@ -5,29 +5,29 @@
 # Copyright (C) 2024 Argmax, Inc. All Rights Reserved.
 #
 
-import time
-import math
-from typing import Optional, Tuple
 import gc
+import math
+import time
+from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
-from PIL import Image
 from argmaxtools.utils import get_logger
+from PIL import Image
+
 from python.src.utils import bytes2gigabytes
 
 from .model_io import (
     _DEFAULT_MODEL,
-    load_text_encoder,
-    load_tokenizer,
     load_mmdit,
-    load_vae_decoder,
-    load_vae_encoder,
     load_t5_encoder,
     load_t5_tokenizer,
+    load_text_encoder,
+    load_tokenizer,
+    load_vae_decoder,
+    load_vae_encoder,
 )
-
 from .sampler import ModelSamplingDiscreteFlow
 
 logger = get_logger(__name__)

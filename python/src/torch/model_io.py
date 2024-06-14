@@ -1,11 +1,9 @@
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-
-from safetensors import safe_open
-from PIL import Image
-
 from argmaxtools.utils import get_logger
+from PIL import Image
+from safetensors import safe_open
 
 logger = get_logger(__name__)
 
@@ -121,7 +119,6 @@ def vae_decoder_state_dict_adjustments(state_dict, prefix=""):
 
 
 def mmdit_state_dict_adjustments(state_dict, prefix=""):
-
     # Unsqueeze nn.Linear -> nn.Conv2d
     state_dict = {
         k: v[:, :, None, None] if "mlp" in k and "weight" in k else v

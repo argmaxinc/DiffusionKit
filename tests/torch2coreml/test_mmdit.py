@@ -5,10 +5,10 @@
 
 import os
 import unittest
-import coremltools as ct
-
-import torch
 from typing import Dict
+
+import coremltools as ct
+import torch
 from argmaxtools import test_utils as argmaxtools_test_utils
 from argmaxtools.utils import get_fastest_device, get_logger
 from huggingface_hub import hf_hub_download
@@ -65,7 +65,6 @@ class TestSD3MMDiT(argmaxtools_test_utils.CoreMLTestsMixin, unittest.TestCase):
             TEST_SD3_HF_REPO, "sd3_medium.safetensors"
         )
         if TEST_SD3_CKPT_PATH is not None:
-
             logger.info(f"Loading SD3 model checkpoint from {TEST_SD3_CKPT_PATH}")
             _load_mmdit_weights(cls.test_torch_model, TEST_SD3_CKPT_PATH)
             logger.info("Loaded.")

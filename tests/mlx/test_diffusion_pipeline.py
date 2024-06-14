@@ -3,16 +3,17 @@
 # Copyright (C) 2024 Argmax, Inc. All Rights Reserved.
 #
 
-import mlx.core as mx
-import numpy as np
-import unittest
 import json
 import os
+import unittest
 
-from PIL import Image
-from huggingface_hub import hf_hub_download
-from python.src.mlx import DiffusionPipeline
+import mlx.core as mx
+import numpy as np
 from argmaxtools.utils import get_logger
+from huggingface_hub import hf_hub_download
+from PIL import Image
+
+from python.src.mlx import DiffusionPipeline
 from python.src.utils import image_psnr
 
 logger = get_logger(__name__)
@@ -33,7 +34,6 @@ SKIP_CORRECTNESS = False
 
 
 class TestSD3Pipeline(unittest.TestCase):
-
     @classmethod
     def setUpClass(cls):
         cls.sd_test_images_metadata = hf_hub_download(

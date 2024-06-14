@@ -10,9 +10,8 @@ from typing import List, Optional, Tuple
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
-
-from transformers import T5Config
 from argmaxtools.utils import get_logger
+from transformers import T5Config
 
 logger = get_logger(__name__)
 

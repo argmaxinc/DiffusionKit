@@ -1,10 +1,11 @@
 # reference: https://github.com/ml-explore/mlx-examples/tree/main/stable_diffusion
 
-import regex
 from typing import List
+
 import mlx.core as mx
-from transformers import AutoTokenizer, T5Config
 import numpy as np
+import regex
+from transformers import AutoTokenizer, T5Config
 
 
 class Tokenizer:

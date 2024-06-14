@@ -1,15 +1,13 @@
-from beartype.typing import Tuple
+from dataclasses import dataclass
 from functools import partial
-from jaxtyping import Float
 
 import torch
 import torch.nn as nn
-from torch import Tensor
-
 from argmaxtools import nn as agx
 from argmaxtools._sdpa import Cat as sdpa
-
-from dataclasses import dataclass
+from beartype.typing import Tuple
+from jaxtyping import Float
+from torch import Tensor
 
 
 @dataclass
@@ -90,7 +88,6 @@ class MMDiT(nn.Module):
         pooled_text_embeddings: Float[Tensor, "batch pooled_text_embed_dim 1 1"],
         timestep: Float[Tensor, "batch 1 1 1"],
     ) -> Float[Tensor, "batch vae_latent_dim 1 img_height img_width"]:
-
         batch, _, latent_height, latent_width = latent_image_embeddings.shape
 
         # Prepare input embeddings
@@ -262,7 +259,6 @@ class TransformerBlock(nn.Module):
         tensor: Float[Tensor, "batch hidden_size 1 seq_len"],
         modulation_inputs: Float[Tensor, "batch hidden_size 1 1"],
     ):
-
         # Project Adaptive LayerNorm Modulation parameters
         modulation_params = self.adaLN_modulation(modulation_inputs)
         modulation_params = modulation_params.chunk(self.num_modulation_params, dim=1)
@@ -305,7 +301,6 @@ class TransformerBlock(nn.Module):
         post_mlp_scale: Float[Tensor, "batch hidden_size 1 1"],
         **kwargs,
     ):
-
         residual = residual + self.attn.o_proj(sdpa_output) * post_attn_scale
         return residual + post_mlp_scale * self.mlp(
             affine_transform(
@@ -339,7 +334,6 @@ class MultiModalTransformerBlock(nn.Module):
         Float[Tensor, "batch hidden_size 1 img_seq_len"],
         Float[Tensor, "batch hidden_size 1 txt_seq_len"],
     ]:
-
         # Prepare multi-modal SDPA inputs
         image_intermediates = self.image_transformer_block.pre_sdpa(
             latent_image_embeddings, modulation_inputs=modulation_inputs
@@ -410,7 +404,6 @@ class FinalLayer(nn.Module):
         latent_image_embeddings: Float[Tensor, "batch hidden_size 1 img_seq_len"],
         modulation_inputs: Float[Tensor, "batch hidden_size 1 1"],
     ) -> Float[Tensor, "batch hidden_size 1 img_seq_len"]:
-
         shift, residual_scale = self.adaLN_modulation(modulation_inputs).chunk(2, dim=1)
 
         latent_image_embeddings = affine_transform(
@@ -426,7 +419,6 @@ class FinalLayer(nn.Module):
 # def mmdit_state_dict_adjustments(state_dict, prefix, local_metadata,
 #                                  strict, missing_keys, unexpected_keys, error_msgs):
 def mmdit_state_dict_adjustments(state_dict, prefix=""):
-
     # Unsqueeze nn.Linear -> nn.Conv2d
     state_dict = {
         k: v[:, :, None, None] if "mlp" in k and "weight" in k else v

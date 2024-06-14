@@ -10,24 +10,25 @@ from functools import partial
 from typing import Optional
 
 import mlx.core as mx
-from mlx.utils import tree_flatten, tree_unflatten
 from huggingface_hub import hf_hub_download
+from mlx.utils import tree_flatten, tree_unflatten
 from transformers import T5Config
-
-# import argmaxtools.mlx.utils as axu
 
 from .clip import CLIPTextModel
 from .config import (
     AutoencoderConfig,
     CLIPTextModelConfig,
+    SD3_2b,
     VAEDecoderConfig,
     VAEEncoderConfig,
-    SD3_2b,
 )
 from .mmdit import MMDiT
-from .tokenizer import Tokenizer, T5Tokenizer
-from .vae import Autoencoder, VAEDecoder, VAEEncoder
 from .t5 import SD3T5Encoder
+from .tokenizer import T5Tokenizer, Tokenizer
+from .vae import Autoencoder, VAEDecoder, VAEEncoder
+
+# import argmaxtools.mlx.utils as axu
+
 
 RANK = 32
 _DEFAULT_MMDIT = "stabilityai/stable-diffusion-3-medium"
@@ -149,7 +150,6 @@ def mmdit_state_dict_adjustments(state_dict, prefix=""):
 
 
 def vae_decoder_state_dict_adjustments(state_dict, prefix=""):
-
     state_dict = {k.replace(prefix, ""): v for k, v in state_dict.items()}
 
     # Filter out MMDIT related tensors

@@ -3,15 +3,14 @@
 # Copyright (C) 2024 Argmax, Inc. All Rights Reserved.
 #
 
-from beartype.typing import Tuple
-from jaxtyping import Float
 from functools import partial
-from argmaxtools.utils import get_logger
 
 import mlx.core as mx
 import mlx.nn as nn
-
 import numpy as np
+from argmaxtools.utils import get_logger
+from beartype.typing import Tuple
+from jaxtyping import Float
 
 from .config import MMDiTConfig
 
@@ -248,7 +247,6 @@ class TransformerBlock(nn.Module):
         )
 
     def pre_sdpa(self, tensor: mx.array, modulation_inputs: mx.array):
-
         # Project Adaptive LayerNorm modulation parameters
         modulation_params = self.adaLN_modulation(modulation_inputs)
         modulation_params = mx.split(
@@ -326,7 +324,6 @@ class MultiModalTransformerBlock(nn.Module):
         token_level_text_embeddings: mx.array,  # token-level text embeddings
         modulation_inputs: mx.array,  # pooled text embeddings + timestep embeddings
     ):
-
         # Prepare multi-modal SDPA inputs
         image_intermediates = self.image_transformer_block.pre_sdpa(
             latent_image_embeddings, modulation_inputs=modulation_inputs
@@ -412,7 +409,6 @@ class FinalLayer(nn.Module):
     def __call__(
         self, latent_image_embeddings: mx.array, modulation_inputs: mx.array
     ) -> mx.array:
-
         shift, residual_scale = mx.split(
             self.adaLN_modulation(modulation_inputs), 2, axis=-1
         )
