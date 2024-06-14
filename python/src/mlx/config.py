@@ -4,9 +4,10 @@
 # For licensing see accompanying LICENSE.md file.
 # Copyright (C) 2024 Argmax, Inc. All Rights Reserved.
 #
-import mlx.core as mx
 from dataclasses import dataclass
 from typing import Optional, Tuple
+
+import mlx.core as mx
 
 
 @dataclass

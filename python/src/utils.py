@@ -1,11 +1,9 @@
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-
-from safetensors import safe_open
-from PIL import Image
-
 from argmaxtools.utils import get_logger
+from PIL import Image
+from safetensors import safe_open
 
 logger = get_logger(__name__)
 

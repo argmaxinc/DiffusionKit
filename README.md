@@ -92,3 +92,22 @@ Please refer to the help menu for all available arguments: `diffusionkit-cli -h`
 🚧
 
 </details>
+
+## License
+
+DiffusionKit is released under the MIT License. See [LICENSE](LICENSE) for more details.
+
+## Citation
+
+If you use DiffusionKit for something cool or just find it useful, please drop us a note at [info@takeargmax.com](mailto:info@takeargmax.com)!
+
+If you use DiffusionKit for academic work, here is the BibTeX:
+
+```bibtex
+@misc{diffusionkit-argmax,
+   title = {DiffusionKit},
+   author = {Argmax, Inc.},
+   year = {2024},
+   URL = {https://github.com/argmaxinc/DiffusionKit}
+}
+```

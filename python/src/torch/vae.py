@@ -1,10 +1,10 @@
+from dataclasses import dataclass, field
+from functools import partial
+from typing import List
+
 import torch.nn as nn
 import torch.nn.functional as F
-
 from argmaxtools._sdpa import Cat as sdpa
-from functools import partial
-from dataclasses import dataclass, field
-from typing import List
 
 
 @dataclass
@@ -120,7 +120,6 @@ class VAEDecoder(nn.Module):
         )
 
     def forward(self, z):
-
         # Mid-blocks with self-attention
         x = self.mid.block_2(self.mid.attn_1(self.mid.block_1(self.conv_in(z))))
 

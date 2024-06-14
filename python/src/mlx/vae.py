@@ -7,10 +7,10 @@
 
 import math
 from typing import List, Optional
-from argmaxtools.utils import get_logger
 
 import mlx.core as mx
 import mlx.nn as nn
+from argmaxtools.utils import get_logger
 
 from .config import AutoencoderConfig
 
