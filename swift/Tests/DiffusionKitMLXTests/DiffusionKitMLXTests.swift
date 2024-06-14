@@ -1,12 +1,13 @@
+//  For licensing see accompanying LICENSE.md file.
+//  Copyright © 2024 Argmax, Inc. All rights reserved.
+
 import XCTest
+
 @testable import DiffusionKitMLX
 
 final class DiffusionKitMLXTests: XCTestCase {
-    func testExample() throws {
-        // XCTest Documentation
-        // https://developer.apple.com/documentation/xctest
-
-        // Defining Test Cases and Test Methods
-        // https://developer.apple.com/documentation/xctest/defining_test_cases_and_test_methods
+    func testInit() throws {
+        let diffusionKitMLX = DiffusionKitMLX()
+        XCTAssertNotNil(diffusionKitMLX)
     }
 }

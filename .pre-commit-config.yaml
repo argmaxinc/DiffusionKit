@@ -22,7 +22,7 @@ repos:
     hooks:
       - id: swift-format
         name: swift-format
-        entry: swift-format
+        entry: swift-format format --in-place --recursive .
         language: system
         types: [swift]
         files: \.swift$

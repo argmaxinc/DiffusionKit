@@ -16,8 +16,8 @@ let package = Package(
             targets: ["DiffusionKit"]
         ),
         .library(
-                name: "DiffusionKitMLX",
-                targets: ["DiffusionKitMLX"]
+            name: "DiffusionKitMLX",
+            targets: ["DiffusionKitMLX"]
         ),
     ],
     dependencies: [
@@ -29,7 +29,7 @@ let package = Package(
         .target(
             name: "DiffusionKit",
             dependencies: [
-                .product(name: "Transformers", package: "swift-transformers"),
+                .product(name: "Transformers", package: "swift-transformers")
             ],
             path: "swift/Sources/DiffusionKit"
         ),
@@ -58,6 +58,6 @@ let package = Package(
                 .product(name: "Transformers", package: "swift-transformers"),
             ],
             path: "swift/Tests/DiffusionKitMLXTests"
-        )
+        ),
     ]
 )
