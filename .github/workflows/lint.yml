@@ -14,8 +14,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Cache Homebrew
+        uses: actions/cache@v3
+        with:
+          path: /home/linuxbrew/.linuxbrew
+          key: ${{ runner.os }}-homebrew-${{ hashFiles('**/Brewfile.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-homebrew-
+
       - name: Set up Homebrew
-        id: set-up-homebrew
+        if: steps.cache-homebrew.outputs.cache-hit != 'true'
         uses: Homebrew/actions/setup-homebrew@master
 
       - name: Setup environment
