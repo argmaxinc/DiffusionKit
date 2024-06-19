@@ -74,6 +74,7 @@ Some notable optional arguments:
 - For image-to-image, use `--image-path` (path to input image) and `--denoise` (value between 0. and 1.)
 - T5 text embeddings, use `--t5`
 - For different resolutions, use `--height` and `--width`
+- For using a local checkpoint, use `--local-ckpt </path/to/ckpt.safetensors>` (e.g. `~/models/stable-diffusion-3-medium/sd3_medium.safetensors`).
 
 Please refer to the help menu for all available arguments: `diffusionkit-cli -h`.
 
