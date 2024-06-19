@@ -62,6 +62,8 @@ MAX_LATENT_RESOLUTION = {
     "8b": 192,
 }
 
+LOCAl_SD3_CKPT = None
+
 
 def mmdit_state_dict_adjustments(state_dict, prefix=""):
     # Remove prefix
@@ -453,7 +455,8 @@ def load_mmdit(
     model = MMDiT(config)
 
     mmdit_weights = _MMDIT[key][model_key]
-    weights = mx.load(hf_hub_download(key, mmdit_weights))
+    mmdit_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, mmdit_weights)
+    weights = mx.load(mmdit_weights_ckpt)
     weights = mmdit_state_dict_adjustments(weights, prefix="model.diffusion_model.")
     weights = {k: v.astype(dtype) for k, v in weights.items()}
     model.update(tree_unflatten(tree_flatten(weights)))
@@ -548,7 +551,8 @@ def load_vae_decoder(
 
     dtype = mx.float16 if float16 else mx.float32
     vae_weights = _MMDIT[key][model_key]
-    weights = mx.load(hf_hub_download(key, vae_weights))
+    vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
+    weights = mx.load(vae_weights_ckpt)
     weights = vae_decoder_state_dict_adjustments(
         weights, prefix="first_stage_model.decoder."
     )
@@ -575,7 +579,8 @@ def load_vae_encoder(
 
     dtype = mx.float16 if float16 else mx.float32
     vae_weights = _MMDIT[key][model_key]
-    weights = mx.load(hf_hub_download(key, vae_weights))
+    vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
+    weights = mx.load(vae_weights_ckpt)
     weights = vae_encoder_state_dict_adjustments(
         weights, prefix="first_stage_model.encoder."
     )

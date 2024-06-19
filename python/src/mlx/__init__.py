@@ -48,7 +48,9 @@ class DiffusionPipeline:
         model_size: str = "2b",
         low_memory_mode: bool = True,
         a16: bool = False,
+        local_ckpt=None,
     ):
+        model_io.LOCAl_SD3_CKPT = local_ckpt
         self.dtype = mx.float16 if w16 else mx.float32
         self.activation_dtype = mx.float16 if a16 else mx.float32
         self.use_t5 = use_t5

@@ -99,6 +99,12 @@ def cli():
         default=0.0,
         help="Denoising factor when an input image is provided. (between 0.0 and 1.0)",
     )
+    parser.add_argument(
+        "--local-ckpt",
+        default=None,
+        type=str,
+        help="Path to the local mmdit checkpoint.",
+    )
     args = parser.parse_args()
 
     if args.benchmark_mode:
@@ -119,6 +125,7 @@ def cli():
         model_size=args.model_size,
         low_memory_mode=args.low_memory_mode,
         a16=args.a16,
+        local_ckpt=args.local_ckpt,
     )
 
     # Ensure that models are read in memory if needed
