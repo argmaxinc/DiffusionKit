@@ -13,8 +13,6 @@ This repository comprises
 
 ## Installation
 
-<details>
-
 The following installation steps are required for:
 - MLX inference
 - PyTorch to Core ML model conversion
@@ -31,12 +29,12 @@ pip install -e .
 ### Hugging Face Hub Credentials
 
 [Stable Diffusion 3](https://huggingface.co/stabilityai/stable-diffusion-3-medium) requires users to accept the terms before downloading the checkpoint. Once you accept the terms, sign in with your Hugging Face hub READ token as below:
+> [!IMPORTANT]
+> If using a fine-grained token, it is also necessary to [edit permissions](https://huggingface.co/settings/tokens) to allow `Read access to contents of all public gated repos you can access`
 
 ```bash
 huggingface-cli login --token YOUR_HF_HUB_TOKEN
 ```
-
-</details>
 
 ## <a name="converting-models-to-coreml"></a> Converting Models from PyTorch to Core ML
 
@@ -44,20 +42,24 @@ huggingface-cli login --token YOUR_HF_HUB_TOKEN
   <summary> Click to expand </summary>
 
 **Step 1:** Follow the installation steps from the previous section
-**Step 2:** Prepare the denoise model (MMDiT) Core ML model files (`.mlpackage`)
+
+**Step 2:** Verify you've accepted the [StabilityAI license terms](https://huggingface.co/stabilityai/stable-diffusion-3-medium) and have allowed gated access on your [HuggingFace token](https://huggingface.co/settings/tokens)
+
+**Step 3:** Prepare the denoise model (MMDiT) Core ML model files (`.mlpackage`)
 
 ```shell
-python -m tests.torch2coreml.test_mmdit --sd3-ckpt-path <path-to-sd3-mmdit.safetensors or model-version-string-from-hub> --model-version {2b} -o <output-mlpackages-directory> --latent-size {64, 128}
+python -m tests.torch2coreml.test_mmdit --sd3-ckpt-path stabilityai/stable-diffusion-3-medium --model-version 2b -o <output-mlpackages-directory> --latent-size {64, 128}
 ```
 
-**Step 3:** Prepare the VAE Decoder Core ML model files (`.mlpackage`)
+**Step 4:** Prepare the VAE Decoder Core ML model files (`.mlpackage`)
 
 ```shell
-python -m tests.torch2coreml.test_vae --sd3-ckpt-path <path-to-sd3-mmdit.safetensors or model-version-string-from-hub> -o <output-mlpackages-directory> --latent-size {64, 128}
+python -m tests.torch2coreml.test_vae --sd3-ckpt-path stabilityai/stable-diffusion-3-medium -o <output-mlpackages-directory> --latent-size {64, 128}
 ```
 
 Note:
-- `--sd3-ckpt-path` can be a path to a local `.safetensors` file or a HuggingFace repo (e.g. `stabilityai/stable-diffusion-3-medium`).
+- `--sd3-ckpt-path` can be a path any HuggingFace repo (e.g. `stabilityai/stable-diffusion-3-medium`).
+- `--local-ckpt` can be a path to a local `sd3_medium.safetensors` file
 </details>
 
 ## <a name="image-generation-with-python-mlx"></a> Image Generation with Python MLX
