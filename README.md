@@ -67,6 +67,7 @@ Note:
 <details>
   <summary> Click to expand </summary>
 
+### CLI ###
 For simple text-to-image in float16 precision:
 ```shell
 diffusionkit-cli --prompt "a photo of a cat" --output-path </path/to/output/image.png> --seed 0 --w16 --a16
@@ -79,6 +80,57 @@ Some notable optional arguments:
 - For using a local checkpoint, use `--local-ckpt </path/to/ckpt.safetensors>` (e.g. `~/models/stable-diffusion-3-medium/sd3_medium.safetensors`).
 
 Please refer to the help menu for all available arguments: `diffusionkit-cli -h`.
+
+### Code ###
+After installing the package, import it using:
+```python
+from python.src.mlx import DiffusionPipeline
+```
+
+Then, initialize the pipeline object:
+```python
+pipeline = DiffusionPipeline(
+  model="argmaxinc/stable-diffusion",
+  w16=True,
+  shift=3.0,
+  use_t5=False,
+  model_size="2b",
+  low_memory_mode=False,
+  a16=True,
+)
+```
+
+Some notable optional arguments:
+- For T5 text embeddings, set `use_t5=True`
+- For using a local checkpoint, set `local_ckpt=</path/to/ckpt.safetensors>` (e.g. `~/models/stable-diffusion-3-medium/sd3_medium.safetensors`).
+- If you want to use the `pipeline` object more than once, set `low_memory_mode=False`.
+- For loading weights in FP32, set `w16=False`
+- For FP32 activations, set `a16=False`
+
+Note: Only `2b` model size is available for this pipeline.
+
+Finally, to generate the image, use the `generate_image()` function:
+```python
+HEIGHT = 512
+WIDTH = 512
+
+image, _ = pipeline.generate_image(
+  "a photo of a cat holding a sign that says 'Hello!'",
+  cfg_weight=5.0,
+  num_steps=50,
+  latent_size=(HEIGHT // 8, WIDTH // 8),
+)
+```
+Some notable optional arguments:
+- For image-to-image, use `image_path` (path to input image) and `denoise` (value between 0. and 1.) input variables.
+- For seed, use `seed` input variable.
+- For negative prompt, use `negative_text` input variable.
+
+
+The generated `image` can be saved with:
+```python
+image.save("path/to/save.png")
+```
 
 </details>
 
