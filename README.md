@@ -62,11 +62,12 @@ Note:
 - `--local-ckpt` can be a path to a local `sd3_medium.safetensors` file
 </details>
 
-## <a name="image-generation-with-python-mlx-with-cli"></a> Image Generation with Python MLX with CLI
+## <a name="image-generation-with-python-mlx"></a> Image Generation with Python MLX with CLI
 
 <details>
   <summary> Click to expand </summary>
 
+### CLI ###
 For simple text-to-image in float16 precision:
 ```shell
 diffusionkit-cli --prompt "a photo of a cat" --output-path </path/to/output/image.png> --seed 0 --w16 --a16
@@ -80,27 +81,21 @@ Some notable optional arguments:
 
 Please refer to the help menu for all available arguments: `diffusionkit-cli -h`.
 
-</details>
-
-## <a name="image-generation-with-python-mlx-with-code"></a> Image Generation with Python MLX with Code
-
-<details>
-  <summary> Click to expand </summary>
-
+### Code ###
 After installing the package, import it using:
-```shell
+```python
 from python.src.mlx import DiffusionPipeline
 ```
 
 Then, initialize the pipeline object:
-```shell
+```python
 pipeline = DiffusionPipeline(
   model="argmaxinc/stable-diffusion",
   w16=True,
   shift=3.0,
   use_t5=False,
   model_size="2b",
-  low_memory_mode=True,
+  low_memory_mode=False,
   a16=True,
 )
 ```
@@ -115,7 +110,7 @@ Some notable optional arguments:
 Note: Only `2b` model size is available for this pipeline.
 
 Finally, to generate the image, use the `generate_image()` function:
-```shell
+```python
 HEIGHT = 512
 WIDTH = 512
 
@@ -133,7 +128,7 @@ Some notable optional arguments:
 
 
 The generated `image` can be saved with:
-```shell
+```python
 image.save("path/to/save.png")
 ```
 
