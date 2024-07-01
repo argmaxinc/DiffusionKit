@@ -62,7 +62,7 @@ Note:
 - `--local-ckpt` can be a path to a local `sd3_medium.safetensors` file
 </details>
 
-## <a name="image-generation-with-python-mlx"></a> Image Generation with Python MLX with CLI
+## <a name="image-generation-with-python-mlx"></a> Image Generation with Python MLX
 
 <details>
   <summary> Click to expand </summary>
