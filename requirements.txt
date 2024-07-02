@@ -1,0 +1,8 @@
+argmaxtools
+torch
+safetensors
+mlx
+jaxtyping
+transformers
+pillow
+sentencepiece

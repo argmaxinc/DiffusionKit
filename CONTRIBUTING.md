@@ -30,15 +30,16 @@ We welcome and encourage contributions to DiffusionKit! Whether you're fixing bu
    You can specify the model version as follows:
 
     For python and mlx:
+
     ```bash
     make download-model MODEL=stabilityai/stable-diffusion-3-medium
     ```
 
     For Swift with Core ML:
+
     ```bash
     make download-model MODEL=argmaxinc/coreml-stable-diffusion-3-medium
     ```
-
 
 ## Making Changes
 
