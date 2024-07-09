@@ -13,8 +13,8 @@ from argmaxtools import test_utils as argmaxtools_test_utils
 from argmaxtools.utils import get_fastest_device, get_logger
 from huggingface_hub import hf_hub_download
 
-from python.src.torch import vae
-from python.src.torch.model_io import _load_vae_decoder_weights
+from python.src.diffusionkit.torch import vae
+from python.src.diffusionkit.torch.model_io import _load_vae_decoder_weights
 
 torch.set_grad_enabled(False)
 logger = get_logger(__name__)

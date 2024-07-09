@@ -23,10 +23,11 @@ setup(
         "pillow",
         "sentencepiece",
     ],
-    packages=find_packages(),
+    packages=["diffusionkit"],
+    package_dir={"": "python/src", "diffusionkit": "python/src/diffusionkit"},
     entry_points={
         "console_scripts": [
-            "diffusionkit-cli=python.src.mlx.scripts.generate_images:cli",
+            "diffusionkit-cli=diffusionkit.mlx.scripts.generate_images:cli",
         ],
     },
     classifiers=[

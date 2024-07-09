@@ -13,8 +13,8 @@ from argmaxtools.utils import get_logger
 from huggingface_hub import hf_hub_download
 from PIL import Image
 
-from python.src.mlx import DiffusionPipeline
-from python.src.utils import image_psnr
+from python.src.diffusionkit.mlx import DiffusionPipeline
+from python.src.diffusionkit.utils import image_psnr
 
 logger = get_logger(__name__)
 

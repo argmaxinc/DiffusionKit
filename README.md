@@ -58,8 +58,7 @@ python -m tests.torch2coreml.test_vae --sd3-ckpt-path stabilityai/stable-diffusi
 ```
 
 Note:
-- `--sd3-ckpt-path` can be a path any HuggingFace repo (e.g. `stabilityai/stable-diffusion-3-medium`).
-- `--local-ckpt` can be a path to a local `sd3_medium.safetensors` file
+- `--sd3-ckpt-path` can be a path any HuggingFace repo (e.g. `stabilityai/stable-diffusion-3-medium`) OR a path to a local `sd3_medium.safetensors` file
 </details>
 
 ## <a name="image-generation-with-python-mlx"></a> Image Generation with Python MLX
@@ -84,7 +83,7 @@ Please refer to the help menu for all available arguments: `diffusionkit-cli -h`
 ### Code ###
 After installing the package, import it using:
 ```python
-from python.src.mlx import DiffusionPipeline
+from diffusionkit.mlx import DiffusionPipeline
 ```
 
 Then, initialize the pipeline object:
