@@ -16,7 +16,7 @@ import numpy as np
 from argmaxtools.utils import get_logger
 from PIL import Image
 
-from python.src.utils import bytes2gigabytes
+from python.src.diffusionkit.utils import bytes2gigabytes
 
 from .model_io import (
     _DEFAULT_MODEL,
