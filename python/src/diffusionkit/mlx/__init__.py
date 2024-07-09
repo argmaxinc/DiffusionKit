@@ -14,9 +14,8 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 from argmaxtools.utils import get_logger
-from PIL import Image
-
 from diffusionkit.utils import bytes2gigabytes
+from PIL import Image
 
 from .model_io import (
     _DEFAULT_MODEL,
