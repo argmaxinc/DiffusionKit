@@ -8,7 +8,7 @@ import argparse
 
 from argmaxtools.utils import get_logger
 
-from python.src.diffusionkit.mlx import DiffusionPipeline
+from diffusionkit.mlx import DiffusionPipeline
 
 logger = get_logger(__name__)
 
