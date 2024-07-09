@@ -24,8 +24,7 @@ setup(
         "sentencepiece",
     ],
     packages=["diffusionkit"],
-    package_dir={"": "python/src",
-                 "diffusionkit": "python/src/diffusionkit"},
+    package_dir={"": "python/src", "diffusionkit": "python/src/diffusionkit"},
     entry_points={
         "console_scripts": [
             "diffusionkit-cli=diffusionkit.mlx.scripts.generate_images:cli",
