@@ -11,10 +11,9 @@ import coremltools as ct
 import torch
 from argmaxtools import test_utils as argmaxtools_test_utils
 from argmaxtools.utils import get_fastest_device, get_logger
+from diffusionkit.torch import vae
+from diffusionkit.torch.model_io import _load_vae_decoder_weights
 from huggingface_hub import hf_hub_download
-
-from python.src.diffusionkit.torch import vae
-from python.src.diffusionkit.torch.model_io import _load_vae_decoder_weights
 
 torch.set_grad_enabled(False)
 logger = get_logger(__name__)
@@ -26,6 +25,8 @@ TEST_DEV = os.getenv("TEST_DEV", None) or get_fastest_device()
 TEST_TORCH_DTYPE = torch.float32
 TEST_PSNR_THR = 35
 TEST_LATENT_SIZE = 64  # 64 latent -> 512 image, 128 latent -> 1024 image
+TEST_LATENT_HEIGHT = TEST_LATENT_SIZE
+TEST_LATENT_WIDTH = TEST_LATENT_SIZE
 
 # Test configuration
 # argmaxtools_test_utils.TEST_DEFAULT_NBITS = 8
@@ -90,11 +91,46 @@ def get_test_inputs(config: vae.VAEDecoderConfig) -> Dict[str, torch.Tensor]:
     if TEST_LATENT_SIZE != config_expected_latent_resolution:
         logger.warning(
             f"TEST_LATENT_SIZE ({TEST_LATENT_SIZE}) does not match the implied "
-            "latent resolution from the model config "
+            f"latent resolution ({config_expected_latent_resolution}) from the model config "
         )
 
-    z_dims = (1, config.in_channels, TEST_LATENT_SIZE, TEST_LATENT_SIZE)
+    z_dims = (1, config.in_channels, TEST_LATENT_HEIGHT, TEST_LATENT_WIDTH)
     return {"z": torch.randn(*z_dims).to(TEST_DEV).to(TEST_TORCH_DTYPE)}
+
+
+def convert_vae_to_mlpackage(
+    model_version: str,
+    latent_h: int,
+    latent_w: int,
+    output_dir: str = None,
+) -> str:
+    """Converts a VAE decoder model to a CoreML package.
+
+    Returns:
+        `str`: path to the converted model.
+    """
+    global TEST_SD3_CKPT_PATH, TEST_SD3_HF_REPO, TEST_LATENT_WIDTH, TEST_LATENT_HEIGHT, TEST_CACHE_DIR
+
+    # Convert to CoreML
+    TEST_SD3_HF_REPO = model_version
+    TEST_LATENT_HEIGHT = latent_h or TEST_LATENT_SIZE
+    TEST_LATENT_WIDTH = latent_w or TEST_LATENT_SIZE
+
+    argmaxtools_test_utils.TEST_COMPILE_COREML = False
+
+    with argmaxtools_test_utils._get_test_cache_dir(
+        persistent_cache_dir=output_dir
+    ) as TEST_CACHE_DIR:
+        suite = unittest.TestSuite()
+        suite.addTest(TestSD3VAEDecoder("test_torch2coreml_correctness_and_speedup"))
+
+        if os.getenv("DEBUG", False):
+            suite.debug()
+        else:
+            runner = unittest.TextTestRunner()
+            runner.run(suite)
+
+    return os.path.join(TEST_CACHE_DIR, f"{TestSD3VAEDecoder.model_name}.mlpackage")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-VERSION = "0.2.0"
+VERSION = "0.2.11"
 
 with open("README.md") as f:
     readme = f.read()
@@ -23,8 +23,8 @@ setup(
         "pillow",
         "sentencepiece",
     ],
-    packages=["diffusionkit"],
-    package_dir={"": "python/src", "diffusionkit": "python/src/diffusionkit"},
+    packages=find_packages(where="python/src"),
+    package_dir={"": "python/src"},
     entry_points={
         "console_scripts": [
             "diffusionkit-cli=diffusionkit.mlx.scripts.generate_images:cli",
