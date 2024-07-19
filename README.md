@@ -48,13 +48,13 @@ huggingface-cli login --token YOUR_HF_HUB_TOKEN
 **Step 3:** Prepare the denoise model (MMDiT) Core ML model files (`.mlpackage`)
 
 ```shell
-python -m tests.torch2coreml.test_mmdit --sd3-ckpt-path stabilityai/stable-diffusion-3-medium --model-version 2b -o <output-mlpackages-directory> --latent-size {64, 128}
+python -m python.src.diffusionkit.tests.torch2coreml.test_mmdit --sd3-ckpt-path stabilityai/stable-diffusion-3-medium --model-version 2b -o <output-mlpackages-directory> --latent-size {64, 128}
 ```
 
 **Step 4:** Prepare the VAE Decoder Core ML model files (`.mlpackage`)
 
 ```shell
-python -m tests.torch2coreml.test_vae --sd3-ckpt-path stabilityai/stable-diffusion-3-medium -o <output-mlpackages-directory> --latent-size {64, 128}
+python -m python.src.diffusionkit.tests.torch2coreml.test_vae --sd3-ckpt-path stabilityai/stable-diffusion-3-medium -o <output-mlpackages-directory> --latent-size {64, 128}
 ```
 
 Note:
