@@ -1,6 +1,18 @@
-from setuptools import find_packages, setup
+import os
 
-VERSION = "0.2.0"
+from setuptools import find_packages, setup
+from setuptools.command.install import install
+
+VERSION = "0.2.16"
+
+
+class VersionInstallCommand(install):
+    def run(self):
+        install.run(self)
+        version_file = os.path.join(self.install_lib, "diffusionkit", "version.py")
+        with open(version_file, "w") as f:
+            f.write(f"__version__ = '{VERSION}'\n")
+
 
 with open("README.md") as f:
     readme = f.read()
@@ -14,7 +26,7 @@ setup(
     long_description_content_type="text/markdown",
     author="Argmax, Inc.",
     install_requires=[
-        "argmaxtools",
+        "argmaxtools>=0.1.13",
         "torch",
         "safetensors",
         "mlx",
@@ -23,12 +35,15 @@ setup(
         "pillow",
         "sentencepiece",
     ],
-    packages=["diffusionkit"],
-    package_dir={"": "python/src", "diffusionkit": "python/src/diffusionkit"},
+    packages=find_packages(where="python/src"),
+    package_dir={"": "python/src"},
     entry_points={
         "console_scripts": [
             "diffusionkit-cli=diffusionkit.mlx.scripts.generate_images:cli",
         ],
+    },
+    cmdclass={
+        "install": VersionInstallCommand,
     },
     classifiers=[
         "Development Status :: 4 - Beta",

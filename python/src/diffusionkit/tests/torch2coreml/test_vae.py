@@ -11,10 +11,9 @@ import coremltools as ct
 import torch
 from argmaxtools import test_utils as argmaxtools_test_utils
 from argmaxtools.utils import get_fastest_device, get_logger
+from diffusionkit.torch import vae
+from diffusionkit.torch.model_io import _load_vae_decoder_weights
 from huggingface_hub import hf_hub_download
-
-from python.src.diffusionkit.torch import vae
-from python.src.diffusionkit.torch.model_io import _load_vae_decoder_weights
 
 torch.set_grad_enabled(False)
 logger = get_logger(__name__)
@@ -26,18 +25,29 @@ TEST_DEV = os.getenv("TEST_DEV", None) or get_fastest_device()
 TEST_TORCH_DTYPE = torch.float32
 TEST_PSNR_THR = 35
 TEST_LATENT_SIZE = 64  # 64 latent -> 512 image, 128 latent -> 1024 image
-
-# Test configuration
-# argmaxtools_test_utils.TEST_DEFAULT_NBITS = 8
-argmaxtools_test_utils.TEST_MIN_SPEEDUP_VS_CPU = 3.0
-argmaxtools_test_utils.TEST_COREML_PRECISION = ct.precision.FLOAT16
-argmaxtools_test_utils.TEST_COMPRESSION_MIN_SPEEDUP = 0.5
-argmaxtools_test_utils.TEST_COMPUTE_UNIT = ct.ComputeUnit.CPU_AND_GPU
-argmaxtools_test_utils.TEST_SKIP_SPEED_TESTS = True
-
+TEST_LATENT_HEIGHT = TEST_LATENT_SIZE
+TEST_LATENT_WIDTH = TEST_LATENT_SIZE
 
 SD3_8b = vae.VAEDecoderConfig(resolution=1024)
 SD3_2b = vae.VAEDecoderConfig(resolution=512)
+
+
+def setup_test_config(
+    min_speedup_vs_cpu=3.0,
+    compute_precision=ct.precision.FLOAT16,
+    compute_unit=ct.ComputeUnit.CPU_AND_GPU,
+    compression_min_speedup=0.5,
+    default_nbits=None,
+    skip_speed_tests=True,
+    compile_coreml=False,
+):
+    argmaxtools_test_utils.TEST_MIN_SPEEDUP_VS_CPU = min_speedup_vs_cpu
+    argmaxtools_test_utils.TEST_COREML_PRECISION = compute_precision
+    argmaxtools_test_utils.TEST_COMPUTE_UNIT = compute_unit
+    argmaxtools_test_utils.TEST_COMPRESSION_MIN_SPEEDUP = compression_min_speedup
+    argmaxtools_test_utils.TEST_DEFAULT_NBITS = default_nbits
+    argmaxtools_test_utils.TEST_SKIP_SPEED_TESTS = skip_speed_tests
+    argmaxtools_test_utils.TEST_COMPILE_COREML = compile_coreml
 
 
 class TestSD3VAEDecoder(argmaxtools_test_utils.CoreMLTestsMixin, unittest.TestCase):
@@ -90,11 +100,47 @@ def get_test_inputs(config: vae.VAEDecoderConfig) -> Dict[str, torch.Tensor]:
     if TEST_LATENT_SIZE != config_expected_latent_resolution:
         logger.warning(
             f"TEST_LATENT_SIZE ({TEST_LATENT_SIZE}) does not match the implied "
-            "latent resolution from the model config "
+            f"latent resolution ({config_expected_latent_resolution}) from the model config "
         )
 
-    z_dims = (1, config.in_channels, TEST_LATENT_SIZE, TEST_LATENT_SIZE)
+    z_dims = (1, config.in_channels, TEST_LATENT_HEIGHT, TEST_LATENT_WIDTH)
     return {"z": torch.randn(*z_dims).to(TEST_DEV).to(TEST_TORCH_DTYPE)}
+
+
+def convert_vae_to_mlpackage(
+    model_version: str,
+    latent_h: int,
+    latent_w: int,
+    output_dir: str = None,
+    **test_config_kwargs,
+) -> str:
+    """Converts a VAE decoder model to a CoreML package.
+
+    Returns:
+        `str`: path to the converted model.
+    """
+    global TEST_SD3_CKPT_PATH, TEST_SD3_HF_REPO, TEST_LATENT_WIDTH, TEST_LATENT_HEIGHT, TEST_CACHE_DIR
+
+    # Convert to CoreML
+    TEST_SD3_HF_REPO = model_version
+    TEST_LATENT_HEIGHT = latent_h or TEST_LATENT_SIZE
+    TEST_LATENT_WIDTH = latent_w or TEST_LATENT_SIZE
+
+    setup_test_config(compile_coreml=False, **test_config_kwargs)
+
+    with argmaxtools_test_utils._get_test_cache_dir(
+        persistent_cache_dir=output_dir
+    ) as TEST_CACHE_DIR:
+        suite = unittest.TestSuite()
+        suite.addTest(TestSD3VAEDecoder("test_torch2coreml_correctness_and_speedup"))
+
+        if os.getenv("DEBUG", False):
+            suite.debug()
+        else:
+            runner = unittest.TextTestRunner()
+            runner.run(suite)
+
+    return os.path.join(TEST_CACHE_DIR, f"{TestSD3VAEDecoder.model_name}.mlpackage")
 
 
 if __name__ == "__main__":
@@ -111,6 +157,8 @@ if __name__ == "__main__":
     )
     TEST_SD3_HF_REPO = args.sd3_ckpt_path
     TEST_LATENT_SIZE = args.latent_size
+
+    setup_test_config()
 
     with argmaxtools_test_utils._get_test_cache_dir(args.o) as TEST_CACHE_DIR:
         suite = unittest.TestSuite()

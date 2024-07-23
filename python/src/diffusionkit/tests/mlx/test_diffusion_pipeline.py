@@ -10,11 +10,10 @@ import unittest
 import mlx.core as mx
 import numpy as np
 from argmaxtools.utils import get_logger
+from diffusionkit.mlx import DiffusionPipeline
+from diffusionkit.utils import image_psnr
 from huggingface_hub import hf_hub_download
 from PIL import Image
-
-from python.src.diffusionkit.mlx import DiffusionPipeline
-from python.src.diffusionkit.utils import image_psnr
 
 logger = get_logger(__name__)
 

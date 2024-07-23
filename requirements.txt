@@ -1,4 +1,4 @@
-argmaxtools
+argmaxtools>=0.1.13
 torch
 safetensors
 mlx
