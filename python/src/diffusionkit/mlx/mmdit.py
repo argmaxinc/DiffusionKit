@@ -38,6 +38,10 @@ class MMDiT(nn.Module):
             "timestep": [2],
         }
 
+        # Check if use_pe is enabled
+        if config.use_pe:
+            raise NotImplementedError("Positional encoding is not yet supported")
+
         # Input adapters and embeddings
         self.x_embedder = LatentImageAdapter(config)
         self.x_pos_embedder = LatentImagePositionalEmbedding(config)
@@ -54,6 +58,11 @@ class MMDiT(nn.Module):
             )
             for i in range(config.depth)
         ]
+
+        if config.depth_unimodal > 0:
+            self.unimodal_transformer_blocks = [
+                UniModalTransformerBlock(config) for _ in range(config.depth_unimodal)
+            ]
 
         self.final_layer = FinalLayer(config)
 
@@ -80,7 +89,11 @@ class MMDiT(nn.Module):
             batch, -1, 1, self.config.hidden_size
         )
 
-        # Transformer layers
+        # TODO(arda): process `ids`
+        # ids = torch.cat((txt_ids, img_ids), dim=1)
+        # pe = self.pe_embedder(ids)
+
+        # MultiModalTransformer layers
         count = 0
         for block in self.multimodal_transformer_blocks:
             # Convert to float32 at block 35 to prevent NaNs and infs
@@ -118,6 +131,17 @@ class MMDiT(nn.Module):
                     token_level_text_embeddings = token_level_text_embeddings.astype(t)
                 modulation_inputs = modulation_inputs.astype(t)
             count += 1
+
+        # UnimodalTransformer layers
+        if self.config.depth_unimodal > 0:
+            latent_image_embeddings = mx.concatenate(
+                (token_level_text_embeddings, latent_image_embeddings), axis=-1
+            )
+
+            for block in self.unimodal_transformer_blocks:
+                latent_image_embeddings = block(
+                    latent_image_embeddings, modulation_inputs, None
+                )  # FIXME(arda): positional_encodings
 
         # Final layer
         latent_image_embeddings = self.final_layer(
@@ -576,6 +600,35 @@ class LayerNorm(nn.Module):
             raise ValueError(f"Input tensor must have rank 4, got {input_rank}")
 
         return mx.fast.layer_norm(inputs, weight=None, bias=None, eps=self.eps)
+
+
+class EmbedND(nn.Module):
+    def __init__(self, dim: int, theta: int, axes_dim: list[int]):
+        super().__init__()
+        self.dim = dim
+        self.theta = theta
+        self.axes_dim = axes_dim
+
+    def forward(self, ids: mx.array) -> mx.array:
+        n_axes = ids.shape[-1]
+        emb = mx.concatenate(
+            [rope(ids[..., i], self.axes_dim[i], self.theta) for i in range(n_axes)],
+            dim=-3,
+        )
+
+        return emb.unsqueeze(1)
+
+
+def rope(pos: mx.array, dim: int, theta: int) -> mx.array:
+    assert dim % 2 == 0
+    scale = mx.arange(0, dim, 2, dtype=mx.float32) / dim
+    omega = 1.0 / (theta**scale)
+    # TODO(arda): implement this
+    out = None
+    # out = mx.einsum("...n,d->...nd", pos, omega)
+    # out = torch.stack([torch.cos(out), -torch.sin(out), torch.sin(out), torch.cos(out)], dim=-1)
+    # out = rearrange(out, "b n d (i j) -> b n d i j", i=2, j=2)
+    return out.float()
 
 
 def affine_transform(

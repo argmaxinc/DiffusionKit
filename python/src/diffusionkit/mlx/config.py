@@ -46,6 +46,10 @@ class MMDiTConfig:
 
     # qk norm
     use_qk_norm: bool = False
+    qk_scale: float = 1.0
+
+    # positional encoding
+    use_pe: bool = False
 
     dtype: mx.Dtype = mx.float16
 
