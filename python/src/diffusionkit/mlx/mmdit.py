@@ -3,6 +3,7 @@
 # Copyright (C) 2024 Argmax, Inc. All Rights Reserved.
 #
 
+from dataclasses import dataclass
 from functools import partial
 
 import mlx.core as mx
@@ -224,8 +225,9 @@ class TimestepAdapter(nn.Module):
 class TransformerBlock(nn.Module):
     def __init__(self, config: MMDiTConfig, skip_post_sdpa: bool = False):
         super().__init__()
+        self.config = config
         self.norm1 = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.attn = Attention(config.hidden_size, config.depth)
+        self.attn = Attention(config.hidden_size, config.num_heads)
         self.norm2 = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
         self.skip_post_sdpa = skip_post_sdpa
@@ -245,6 +247,9 @@ class TransformerBlock(nn.Module):
                 config.hidden_size, self.num_modulation_params * config.hidden_size
             ),
         )
+
+        if config.use_qk_norm:
+            self.qk_norm = QKNorm(config.hidden_size // config.num_heads)
 
     def pre_sdpa(self, tensor: mx.array, modulation_inputs: mx.array):
         # Project Adaptive LayerNorm modulation parameters
@@ -268,6 +273,12 @@ class TransformerBlock(nn.Module):
             "k": self.attn.k_proj(pre_attn),
             "v": self.attn.v_proj(pre_attn),
         }
+
+        # Apply QKNorm if enabled
+        if self.config.use_qk_norm:
+            results["q"], results["k"] = self.qk_norm(
+                results["q"], results["k"], results["v"]
+            )
 
         if len(modulation_params) > 2:
             results.update(
@@ -316,13 +327,14 @@ class MultiModalTransformerBlock(nn.Module):
         self.sdpa = partial(sdpa_impl)
 
         self.config = config
-        self.per_head_dim = config.hidden_size // config.depth
+        self.per_head_dim = config.hidden_size // config.num_heads
 
     def __call__(
         self,
         latent_image_embeddings: mx.array,  # latent image embeddings
         token_level_text_embeddings: mx.array,  # token-level text embeddings
         modulation_inputs: mx.array,  # pooled text embeddings + timestep embeddings
+        positional_encodings: mx.array = None,  # positional encodings for rope
     ):
         # Prepare multi-modal SDPA inputs
         image_intermediates = self.image_transformer_block.pre_sdpa(
@@ -337,9 +349,9 @@ class MultiModalTransformerBlock(nn.Module):
 
         def rearrange_for_sdpa(t):
             # Target data layout: (batch, head, seq_len, channel)
-            return t.reshape(batch, -1, self.config.depth, self.per_head_dim).transpose(
-                0, 2, 1, 3
-            )
+            return t.reshape(
+                batch, -1, self.config.num_heads, self.per_head_dim
+            ).transpose(0, 2, 1, 3)
 
         multimodal_sdpa_inputs = {
             "q": rearrange_for_sdpa(
@@ -359,6 +371,10 @@ class MultiModalTransformerBlock(nn.Module):
             ),
             "scale": 1.0 / np.sqrt(self.per_head_dim),
         }
+
+        # Apply rope to q, k if positional_encodings are provided
+        if positional_encodings is not None:
+            pass  # TODO(arda): Implement rope
 
         # Compute multi-modal SDPA
         sdpa_outputs = (
@@ -391,6 +407,94 @@ class MultiModalTransformerBlock(nn.Module):
             )
 
         return latent_image_embeddings, token_level_text_embeddings
+
+
+# Code snippet from https://github.com/black-forest-labs/flux/tree/main
+class UniModalTransformerBlock(nn.Module):
+    def __init__(self, config: MMDiTConfig):
+        super().__init__()
+        self.hidden_dim = config.hidden_size
+        self.num_heads = config.num_heads
+        head_dim = self.hidden_dim // self.num_heads
+        self.scale = (
+            config.qk_scale or head_dim**-0.5
+        )  # FIXME(arda): qk_scale is not defined in MMDiTConfig
+
+        self.mlp_hidden_dim = int(self.hidden_dim * config.mlp_ratio)
+        # qkv and mlp_in
+        self.linear1 = nn.Linear(
+            self.hidden_dim, self.hidden_dim * 3 + self.mlp_hidden_dim
+        )
+        # proj and mlp_out
+        self.linear2 = nn.Linear(self.hidden_dim + self.mlp_hidden_dim, self.hidden_dim)
+
+        self.norm = QKNorm(head_dim)
+
+        self.pre_norm = LayerNorm(self.hidden_dim, eps=1e-6)
+
+        self.mlp_act = nn.GELU()
+        self.modulation = Modulation(self.hidden_dim, double=False)
+
+    # FIXME(arda): check it, won't work
+    def __call__(self, x: mx.array, vec: mx.array, pe: mx.array) -> mx.array:
+        mod, _ = self.modulation(vec)
+        x_mod = (1 + mod.scale) * self.pre_norm(x) + mod.shift
+        qkv, mlp = mx.split(
+            self.linear1(x_mod), [3 * self.hidden_size, self.mlp_hidden_dim], dim=-1
+        )
+
+        B, L, _ = qkv.shape
+        K, H = 3, self.num_heads
+        q, k, v = mx.transpose(qkv, [2, 0, 3, 1, 4]).reshape(
+            K, B, H, L, -1
+        )  # FIXME(arda): rearrange(qkv, "B L (K H D) -> K B H L D", K=3, H=self.num_heads)
+        q, k = self.norm(q, k, v)
+        # TODO(arda): do rope, then sdpa
+        attn = mx.fast.scaled_dot_product_attention(
+            q, k, v, scale=self.scale
+        )  # FIXME(arda):
+
+        output = self.linear2(mx.concat(attn, self.mlp_act(mlp), dim=-1))
+        return x + mod.gate * output
+
+
+# FIXME(arda): check it
+class QKNorm(nn.Module):
+    def __init__(self, head_dim):
+        super().__init__()
+        self.q_norm = LayerNorm(head_dim, eps=1e-6)
+        self.k_norm = LayerNorm(head_dim, eps=1e-6)
+
+    def __call__(
+        self, q: mx.array, k: mx.array, v: mx.array
+    ) -> Tuple[mx.array, mx.array]:
+        q = self.q_norm(q)
+        k = self.k_norm(k)
+        return q.astype(v.dtype), k.astype(v.dtype)
+
+
+@dataclass
+class ModulationOut:
+    shift: mx.array
+    scale: mx.array
+    gate: mx.array
+
+
+# FIXME(arda): check it
+class Modulation(nn.Module):
+    def __init__(self, hidden_dim, double=False):
+        super().__init__()
+        self.is_double = double
+        self.multiplier = 6 if double else 2
+        self.lin = nn.Linear(hidden_dim, hidden_dim * self.multiplier, bias=True)
+
+    def __call__(self, x: mx.array) -> mx.array:
+        out = self.lin(nn.SiLU()(x)[:, None, :].split(self.multiplier, axis=-1))
+
+        return (
+            ModulationOut(*out[:3]),
+            ModulationOut(*out[3:]) if self.is_double else None,
+        )
 
 
 class FinalLayer(nn.Module):

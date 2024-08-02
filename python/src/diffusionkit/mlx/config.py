@@ -15,7 +15,9 @@ class MMDiTConfig:
     """Multi-modal Diffusion Transformer Configuration"""
 
     # Transformer spec
+    num_heads: int = 24
     depth: int = 24  # 24, 38
+    depth_unimodal: int = 0
     mlp_ratio: int = 4
     vae_latent_dim: int = 16  # = in_channels = out_channels
     layer_norm_eps: float = 1e-6
@@ -42,11 +44,21 @@ class MMDiTConfig:
     latent_height: int = 64  # img height // 8
     latent_width: int = 64
 
+    # qk norm
+    use_qk_norm: bool = False
+
     dtype: mx.Dtype = mx.float16
 
 
-SD3_8b = MMDiTConfig(depth=38)
-SD3_2b = MMDiTConfig(depth=24)
+SD3_8b = MMDiTConfig(depth=38, num_heads=38)
+SD3_2b = MMDiTConfig(depth=24, num_heads=24)
+
+FLUX_SCHNELL = MMDiTConfig(
+    num_heads=24,
+    depth=19,
+    depth_unimodal=38,
+    mlp_ratio=4,
+)
 
 
 @dataclass
