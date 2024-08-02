@@ -51,6 +51,9 @@ class MMDiTConfig:
     # positional encoding
     use_pe: bool = False
 
+    # axes_dim
+    axes_dim: list = [16, 56, 56]
+
     dtype: mx.Dtype = mx.float16
 
 

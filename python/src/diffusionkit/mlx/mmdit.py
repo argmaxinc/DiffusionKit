@@ -40,7 +40,11 @@ class MMDiT(nn.Module):
 
         # Check if use_pe is enabled
         if config.use_pe:
-            raise NotImplementedError("Positional encoding is not yet supported")
+            self.pe_embedder = EmbedND(
+                dim=config.hidden_size // config.num_heads,
+                theta=10000,
+                axes_dim=config.axes_dim,
+            )
 
         # Input adapters and embeddings
         self.x_embedder = LatentImageAdapter(config)
