@@ -42,9 +42,9 @@ class MMDiTConfig:
     patchify_via_reshape: bool = False
 
     # y: Text input spec
-    pooled_text_embed_dim: int = 2048  # 768 (CLIP-L/14) + 1280 (CLIP-G/14) = 2048
+    pooled_text_embed_dim: int = 2048  # e.g. SD3: 768 (CLIP-L/14) + 1280 (CLIP-G/14) = 2048
     token_level_text_embed_dim: int = (
-        4096  # 4096 (T5-XXL) = 768 (CLIP-L/14) + 1280 (CLIP-G/14) + 2048 (zero padding)
+        4096  # e.g. SD3: 4096 (T5-XXL) = 768 (CLIP-L/14) + 1280 (CLIP-G/14) + 2048 (zero padding)
     )
 
     # t: Timestep input spec
@@ -64,9 +64,11 @@ SD3_2b = MMDiTConfig(depth=24, num_heads=24)
 FLUX_SCHNELL = MMDiTConfig(num_heads=24,
                            depth=19,
                            depth_unimodal=38,
-                           mlp_ratio=4,
                            patchify_via_reshape=True,
-                           pos_embed_type=PositionalEncoding.PreSDPARope)
+                           pos_embed_type=PositionalEncoding.PreSDPARope,
+                           rope_axes_dim=(16, 56, 56),
+                           pooled_text_embed_dim=768,  # CLIP-L/14 only
+                           )
 
 
 @dataclass
