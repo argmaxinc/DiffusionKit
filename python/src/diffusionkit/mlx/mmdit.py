@@ -167,14 +167,28 @@ class LatentImageAdapter(nn.Module):
 
     def __init__(self, config: MMDiTConfig):
         super().__init__()
+        self.config = config
+        in_dim = config.vae_latent_dim
+        kernel_size = stride = config.patch_size
+
+        if config.patchify_via_reshape:
+            in_dim *= config.patch_size ** 2
+            kernel_size = stride = 1
+
         self.proj = nn.Conv2d(
-            config.vae_latent_dim,
+            in_dim,
             config.hidden_size,
-            kernel_size=config.patch_size,
-            stride=config.patch_size,
+            kernel_size,
+            stride,
         )
 
     def __call__(self, x: mx.array) -> mx.array:
+        if self.config.patchify_via_reshape:
+            b, h, w, c = x.shape
+            p = self.config.patch_size
+            x = x.reshape(b, h // p, p, w // p, p, c).transpose(
+                    0, 1, 3, 5, 2, 4).reshape(b, h // p, w // p, -1)
+
         return self.proj(x)
 
 

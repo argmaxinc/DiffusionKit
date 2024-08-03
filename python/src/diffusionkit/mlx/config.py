@@ -29,6 +29,9 @@ class MMDiTConfig:
     # x: Latent image input spec
     max_latent_resolution: int = 192
     patch_size: int = 2
+    # If true, reshapes input to enact (patch_size, patch_size) space-to-depth operation
+    # If false, uses 2D convolution with kernel_size=patch_size and stride=patch_size
+    patchify_via_reshape: bool = False
 
     # y: Text input spec
     pooled_text_embed_dim: int = 2048  # 768 (CLIP-L/14) + 1280 (CLIP-G/14) = 2048
@@ -60,12 +63,11 @@ class MMDiTConfig:
 SD3_8b = MMDiTConfig(depth=38, num_heads=38)
 SD3_2b = MMDiTConfig(depth=24, num_heads=24)
 
-FLUX_SCHNELL = MMDiTConfig(
-    num_heads=24,
-    depth=19,
-    depth_unimodal=38,
-    mlp_ratio=4,
-)
+FLUX_SCHNELL = MMDiTConfig(num_heads=24,
+                           depth=19,
+                           depth_unimodal=38,
+                           mlp_ratio=4,
+                           patchify_via_reshape=True)
 
 
 @dataclass
