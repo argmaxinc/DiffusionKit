@@ -11,7 +11,6 @@ import mlx.nn as nn
 import numpy as np
 from argmaxtools.utils import get_logger
 from beartype.typing import Tuple
-from jaxtyping import Float
 
 from .config import MMDiTConfig
 
@@ -490,8 +489,8 @@ class UniModalTransformerBlock(nn.Module):
 class QKNorm(nn.Module):
     def __init__(self, head_dim):
         super().__init__()
-        self.q_norm = LayerNorm(head_dim, eps=1e-6)
-        self.k_norm = LayerNorm(head_dim, eps=1e-6)
+        self.q_norm = nn.RMSNorm(head_dim, eps=1e-6)
+        self.k_norm = nn.RMSNorm(head_dim, eps=1e-6)
 
     def __call__(
         self, q: mx.array, k: mx.array, v: mx.array
