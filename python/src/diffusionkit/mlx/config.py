@@ -5,9 +5,15 @@
 # Copyright (C) 2024 Argmax, Inc. All Rights Reserved.
 #
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional, Tuple
 
 import mlx.core as mx
+
+
+class PositionalEncoding(Enum):
+    LearnedInputEmbedding = 1
+    PreSDPARope = 2
 
 
 @dataclass
@@ -21,6 +27,8 @@ class MMDiTConfig:
     mlp_ratio: int = 4
     vae_latent_dim: int = 16  # = in_channels = out_channels
     layer_norm_eps: float = 1e-6
+    pos_embed_type: PositionalEncoding = PositionalEncoding.LearnedInputEmbedding
+    rope_axes_dim: Optional[Tuple[int]] = None
 
     @property
     def hidden_size(self) -> int:
@@ -47,12 +55,6 @@ class MMDiTConfig:
     use_qk_norm: bool = False
     qk_scale: float = 1.0
 
-    # positional encoding
-    use_pe: bool = False
-
-    # axes_dim
-    axes_dim: Tuple[int] = (16, 56, 56)
-
     dtype: mx.Dtype = mx.float16
 
 
@@ -63,7 +65,8 @@ FLUX_SCHNELL = MMDiTConfig(num_heads=24,
                            depth=19,
                            depth_unimodal=38,
                            mlp_ratio=4,
-                           patchify_via_reshape=True)
+                           patchify_via_reshape=True,
+                           pos_embed_type=PositionalEncoding.PreSDPARope)
 
 
 @dataclass
