@@ -25,17 +25,6 @@ class MMDiT(nn.Module):
     def __init__(self, config: MMDiTConfig):
         super().__init__()
         self.config = config
-        self.input_config: dict = {
-            "latent_image_embeddings": (
-                2,
-                self.config.latent_height,
-                self.config.latent_width,
-                16,
-            ),
-            "token_level_text_embeddings": (2, 154, 1, 4096),
-            "pooled_text_embeddings": (2, 1, 1, 2048),
-            "timestep": [2],
-        }
 
         # Check if use_pe is enabled
         if config.use_pe:
@@ -85,6 +74,7 @@ class MMDiT(nn.Module):
             timestep
         )
         token_level_text_embeddings = self.context_embedder(token_level_text_embeddings)
+
         latent_image_embeddings = self.x_embedder(
             latent_image_embeddings
         ) + self.x_pos_embedder(latent_image_embeddings)

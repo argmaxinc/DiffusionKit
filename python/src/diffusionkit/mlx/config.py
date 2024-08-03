@@ -43,10 +43,6 @@ class MMDiTConfig:
     frequency_embed_dim: int = 256
     max_period: int = 10000
 
-    # latent dims
-    latent_height: int = 64  # img height // 8
-    latent_width: int = 64
-
     # qk norm
     use_qk_norm: bool = False
     qk_scale: float = 1.0
