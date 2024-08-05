@@ -30,9 +30,11 @@ class MMDiTConfig:
     pos_embed_type: PositionalEncoding = PositionalEncoding.LearnedInputEmbedding
     rope_axes_dim: Optional[Tuple[int]] = None
 
+    _hidden_size: int = None
+
     @property
     def hidden_size(self) -> int:
-        return 64 * self.depth
+        return self._hidden_size or (64 * self.depth)
 
     # x: Latent image input spec
     max_latent_resolution: int = 192
