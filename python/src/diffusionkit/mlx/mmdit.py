@@ -10,7 +10,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 from argmaxtools.utils import get_logger
-from beartype.typing import Tuple, List, Dict, Optional
+from beartype.typing import Tuple, List, Dict
 
 from .config import MMDiTConfig, PositionalEncoding
 
