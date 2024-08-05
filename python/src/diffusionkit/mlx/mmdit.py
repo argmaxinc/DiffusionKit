@@ -97,10 +97,9 @@ class MMDiT(nn.Module):
             positional_encodings = None
 
         # MultiModalTransformer layers
-        count = 0
-        for block in self.multimodal_transformer_blocks:
+        for bidx, block in enumerate(self.multimodal_transformer_blocks):
             # Convert to float32 at block 35 to prevent NaNs and infs
-            if count == 35:
+            if bidx == 35:
                 if t != mx.float32:
                     logger.debug(
                         "Converting activations at block 35 to float32 to prevent NaNs and infs."
@@ -120,21 +119,20 @@ class MMDiT(nn.Module):
             mx.eval(token_level_text_embeddings)
             if mx.isnan(latent_image_embeddings).any():
                 raise ValueError(
-                    f"NaN detected in latent_image_embeddings at block {count}"
+                    f"NaN detected in latent_image_embeddings at block {bidx}"
                 )
             if (
                 token_level_text_embeddings is not None
                 and mx.isnan(token_level_text_embeddings).any()
             ):
                 raise ValueError(
-                    f"NaN detected in token_level_text_embeddings at block {count}"
+                    f"NaN detected in token_level_text_embeddings at block {bidx}"
                 )
-            if count == 35:
+            if bidx == 35:
                 latent_image_embeddings = latent_image_embeddings.astype(t)
                 if token_level_text_embeddings is not None:
                     token_level_text_embeddings = token_level_text_embeddings.astype(t)
                 modulation_inputs = modulation_inputs.astype(t)
-            count += 1
 
         # UnimodalTransformer layers
         if self.config.depth_unimodal > 0:
