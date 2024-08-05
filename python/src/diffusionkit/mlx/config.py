@@ -30,11 +30,13 @@ class MMDiTConfig:
     pos_embed_type: PositionalEncoding = PositionalEncoding.LearnedInputEmbedding
     rope_axes_dim: Optional[Tuple[int]] = None
 
-    _hidden_size: int = None
+    hidden_size_override: int = (
+        None  # 64 * self.depth is the SD3 convention, but can be overridden
+    )
 
     @property
     def hidden_size(self) -> int:
-        return self._hidden_size or (64 * self.depth)
+        return self.hidden_size_override or (64 * self.depth)
 
     # x: Latent image input spec
     max_latent_resolution: int = 192
@@ -44,10 +46,10 @@ class MMDiTConfig:
     patchify_via_reshape: bool = False
 
     # y: Text input spec
-    pooled_text_embed_dim: int = 2048  # e.g. SD3: 768 (CLIP-L/14) + 1280 (CLIP-G/14) = 2048
-    token_level_text_embed_dim: int = (
-        4096  # e.g. SD3: 4096 (T5-XXL) = 768 (CLIP-L/14) + 1280 (CLIP-G/14) + 2048 (zero padding)
+    pooled_text_embed_dim: int = (
+        2048  # e.g. SD3: 768 (CLIP-L/14) + 1280 (CLIP-G/14) = 2048
     )
+    token_level_text_embed_dim: int = 4096  # e.g. SD3: 4096 (T5-XXL) = 768 (CLIP-L/14) + 1280 (CLIP-G/14) + 2048 (zero padding)
 
     # t: Timestep input spec
     frequency_embed_dim: int = 256
@@ -63,14 +65,15 @@ class MMDiTConfig:
 SD3_8b = MMDiTConfig(depth=38, num_heads=38)
 SD3_2b = MMDiTConfig(depth=24, num_heads=24)
 
-FLUX_SCHNELL = MMDiTConfig(num_heads=24,
-                           depth=19,
-                           depth_unimodal=38,
-                           patchify_via_reshape=True,
-                           pos_embed_type=PositionalEncoding.PreSDPARope,
-                           rope_axes_dim=(16, 56, 56),
-                           pooled_text_embed_dim=768,  # CLIP-L/14 only
-                           )
+FLUX_SCHNELL = MMDiTConfig(
+    num_heads=24,
+    depth=19,
+    depth_unimodal=38,
+    patchify_via_reshape=True,
+    pos_embed_type=PositionalEncoding.PreSDPARope,
+    rope_axes_dim=(16, 56, 56),
+    pooled_text_embed_dim=768,  # CLIP-L/14 only
+)
 
 
 @dataclass
