@@ -65,6 +65,75 @@ MAX_LATENT_RESOLUTION = {
 LOCAl_SD3_CKPT = None
 
 
+# TODO: Implement state_dict_adjustments
+def flux_state_dict_adjustments(state_dict, prefix=""):
+    state_dict = {
+        k.replace("double_blocks", "multimodal_transformer_blocks"): v
+        for k, v in state_dict.items()
+    }
+
+    # Split qkv proj and rename:
+    # *transformer_block.attn.qkv.{weigth/bias}  -> transformer_block.attn.{q/k/v}_proj.{weigth/bias}
+    # *transformer_block.attn.proj.{weigth/bias} -> transformer_block.attn.o_proj.{weight/bias}
+    keys_to_pop = []
+    state_dict_update = {}
+    for k in state_dict:
+        if "attn.qkv" in k:
+            keys_to_pop.append(k)
+            for name, weight in zip(["q", "k", "v"], mx.split(state_dict[k], 3)):
+                state_dict_update[k.replace("attn.qkv", f"attn.{name}_proj")] = (
+                    weight if "weight" in k else weight
+                )
+
+    [state_dict.pop(k) for k in keys_to_pop]
+    state_dict.update(state_dict_update)
+
+    state_dict = {
+        k.replace("txt_attn", "text_transformer_block.attn"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("img_attn", "image_transformer_block.attn"): v
+        for k, v in state_dict.items()
+    }
+
+    state_dict = {
+        k.replace("txt_mlp.0", "text_transformer_block.mlp.fc1"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("txt_mlp.2", "text_transformer_block.mlp.fc2"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("img_mlp.0", "image_transformer_block.mlp.fc1"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("img_mlp.2", "image_transformer_block.mlp.fc2"): v
+        for k, v in state_dict.items()
+    }
+
+    state_dict = {
+        k.replace("img_mod.lin", "image_transformer_block.adaLN_modulation.layers.1"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("txt_mod.lin", "text_transformer_block.adaLN_modulation.layers.1"): v
+        for k, v in state_dict.items()
+    }
+
+    state_dict = {k.replace(".proj", ".o_proj"): v for k, v in state_dict.items()}
+
+    # FIXME: single_blocks
+    state_dict = {
+        k.replace("single_blocks.", "unimodal_transformer_blocks."): v
+        for k, v in state_dict.items()
+    }
+
+    # TODO: qk norm
+
+
 def mmdit_state_dict_adjustments(state_dict, prefix=""):
     # Remove prefix
     state_dict = {k.lstrip(prefix): v for k, v in state_dict.items()}
@@ -151,7 +220,9 @@ def mmdit_state_dict_adjustments(state_dict, prefix=""):
     return state_dict
 
 
-def vae_decoder_state_dict_adjustments(state_dict, prefix=""):
+def vae_decoder_state_dict_adjustments(state_dict, prefix="decoder."):
+    # Keep only the keys that have the prefix
+    state_dict = {k: v for k, v in state_dict.items() if prefix in k}
     state_dict = {k.replace(prefix, ""): v for k, v in state_dict.items()}
 
     # Filter out MMDIT related tensors
@@ -228,6 +299,8 @@ def vae_decoder_state_dict_adjustments(state_dict, prefix=""):
 
 
 def vae_encoder_state_dict_adjustments(state_dict, prefix="encoder."):
+    # Keep only the keys that have the prefix
+    state_dict = {k: v for k, v in state_dict.items() if prefix in k}
     state_dict = {k.replace(prefix, ""): v for k, v in state_dict.items()}
 
     # Filter out MMDIT related tensors
