@@ -508,6 +508,9 @@ class UnifiedTransformerBlock(nn.Module):
     def __init__(self, config: MMDiTConfig):
         super().__init__()
         self.transformer_block = TransformerBlock(config)
+        self.transformer_block.attn.o_proj = (
+            nn.Identity()
+        )  # FIXME(arda): make this configurable
 
         sdpa_impl = mx.fast.scaled_dot_product_attention
         self.sdpa = partial(sdpa_impl)
