@@ -6,7 +6,7 @@
 #
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 import mlx.core as mx
 
@@ -34,8 +34,10 @@ class MMDiTConfig:
     rope_axes_dim: Optional[Tuple[int]] = None
     # FLUX uses RMSNorm post-QK projection
     use_qk_norm: bool = False
+    upcast_multimodal_blocks: Optional[List[int]] = None
+    upcast_unified_blocks: Optional[List[int]] = None
 
-    # 64 * self.depth is the SD3 convention, but can be overridden
+    # 64 * self.depth_multimodal is the SD3 convention, but can be overridden
     hidden_size_override: Optional[int] = None
 
     @property
@@ -64,8 +66,16 @@ class MMDiTConfig:
     dtype: mx.Dtype = mx.float16
 
 
-SD3_8b = MMDiTConfig(depth_multimodal=38, num_heads=38)
-SD3_2b = MMDiTConfig(depth_multimodal=24, num_heads=24)
+SD3_8b = MMDiTConfig(
+    depth_multimodal=38,
+    num_heads=3,
+    upcast_multimodal_blocks=[35]
+)
+
+SD3_2b = MMDiTConfig(
+    depth_multimodal=24,
+    num_heads=24
+)
 
 FLUX_SCHNELL = MMDiTConfig(
     num_heads=24,

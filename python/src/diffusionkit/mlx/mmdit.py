@@ -32,7 +32,7 @@ class MMDiT(nn.Module):
             self.x_pos_embedder = LatentImagePositionalEmbedding(config)
             self.pre_sdpa_rope = nn.Identity()
         elif config.pos_embed_type == PositionalEncoding.PreSDPARope:
-            self.x_pos_embedder = None
+            self.x_pos_embedder = nn.Identity()  # skip input positional encodings
             self.pre_sdpa_rope = RoPE(
                 theta=10000,
                 axes_dim=config.rope_axes_dim,
@@ -80,11 +80,8 @@ class MMDiT(nn.Module):
         )
         token_level_text_embeddings = self.context_embedder(token_level_text_embeddings)
 
-        latent_image_embeddings = self.x_embedder(latent_image_embeddings)
-        if self.x_pos_embedder is not None:
-            latent_image_embeddings = latent_image_embeddings + self.x_pos_embedder(
-                latent_image_embeddings
-            )
+        latent_image_embeddings = self.x_embedder(latent_image_embeddings) + \
+            self.x_pos_embedder(latent_image_embeddings)
 
         latent_image_embeddings = latent_image_embeddings.reshape(
             batch, -1, 1, self.config.hidden_size
@@ -101,12 +98,13 @@ class MMDiT(nn.Module):
         # MultiModalTransformer layers
         if self.config.depth_multimodal > 0:
             for bidx, block in enumerate(self.multimodal_transformer_blocks):
-                # Convert to float32 at block 35 to prevent NaNs and infs
-                if bidx == 35:
+                # Upcast activations to float32 for layers that were diagnosed
+                # to be problematic in lower precision
+                if bidx in (self.config.upcast_multimodal_blocks or []):
                     if t != mx.float32:
                         logger.debug(
-                            "Converting activations at block 35 to float32 to prevent NaNs and infs."
-                        )
+                            "config.upcast_multimodal_blocks: "
+                            f"Upcasting activations at multimodal_block {bidx} to float32")
                     latent_image_embeddings = latent_image_embeddings.astype(mx.float32)
                     token_level_text_embeddings = token_level_text_embeddings.astype(
                         mx.float32
@@ -131,7 +129,8 @@ class MMDiT(nn.Module):
                     raise ValueError(
                         f"NaN detected in token_level_text_embeddings at block {bidx}"
                     )
-                if bidx == 35:
+                if bidx in (self.config.upcast_multimodal_blocks or []):
+                    logger.debug(f"Recasting to original dtype for multimodal_block index {bidx}")
                     latent_image_embeddings = latent_image_embeddings.astype(t)
                     if token_level_text_embeddings is not None:
                         token_level_text_embeddings = (
@@ -146,11 +145,25 @@ class MMDiT(nn.Module):
             )
 
             for block in self.unified_transformer_blocks:
+                if bidx in (self.config.upcast_unified_blocks or []):
+                    if t != mx.float32:
+                        logger.debug(
+                            "config.upcast_unified_blocks: "
+                            f"Upcasting activations at unified_block {bidx} to float32")
+                    latent_unified_embeddings = latent_unified_embeddings.astype(mx.float32)
+                    modulation_inputs = modulation_inputs.astype(mx.float32)
+                    positional_encodings = positional_encodings.astype(mx.float32)
+
                 latent_unified_embeddings = block(
                     latent_unified_embeddings,
                     modulation_inputs,
                     positional_encodings=positional_encodings,
                 )
+                if bidx in (self.config.upcast_unified_blocks or []):
+                    logger.debug(f"Recasting to original dtype for unified_block index {bidx}")
+                    latent_unified_embeddings = latent_unified_embeddings.astype(t)
+                    modulation_inputs = modulation_inputs.astype(t)
+                    positional_encodings = positional_encodings.astype(t)
 
         # Final layer
         latent_unified_embeddings = self.final_layer(
