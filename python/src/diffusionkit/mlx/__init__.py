@@ -152,6 +152,7 @@ class DiffusionPipeline:
         cfg_weight: float = 7.5,
         negative_text: str = "",
     ):
+        # FIXME(arda): Fast hack to get the model working
         if self.is_flux:
             tokens_l = self._tokenize(
                 self.tokenizer_l,
