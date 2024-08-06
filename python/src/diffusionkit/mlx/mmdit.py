@@ -10,7 +10,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 from argmaxtools.utils import get_logger
-from beartype.typing import Tuple, List, Dict
+from beartype.typing import Tuple, List, Dict, Optional
 
 from .config import MMDiTConfig, PositionalEncoding
 
@@ -50,14 +50,14 @@ class MMDiT(nn.Module):
 
         self.multimodal_transformer_blocks = [
             MultiModalTransformerBlock(
-                config, skip_text_post_sdpa=i == config.depth - 1
+                config, skip_text_post_sdpa=i == config.depth_multimodal - 1
             )
-            for i in range(config.depth)
+            for i in range(config.depth_multimodal)
         ]
 
-        if config.depth_unimodal > 0:
-            self.unimodal_transformer_blocks = [
-                UniModalTransformerBlock(config) for _ in range(config.depth_unimodal)
+        if config.depth_unified > 0:
+            self.unified_transformer_blocks = [
+                UnifiedTransformerBlock(config) for _ in range(config.depth_unified)
             ]
 
         self.final_layer = FinalLayer(config)
@@ -97,64 +97,63 @@ class MMDiT(nn.Module):
             positional_encodings = None
 
         # MultiModalTransformer layers
-        for bidx, block in enumerate(self.multimodal_transformer_blocks):
-            # Convert to float32 at block 35 to prevent NaNs and infs
-            if bidx == 35:
-                if t != mx.float32:
-                    logger.debug(
-                        "Converting activations at block 35 to float32 to prevent NaNs and infs."
+        if self.config.depth_multimodal > 0:
+            for bidx, block in enumerate(self.multimodal_transformer_blocks):
+                # Convert to float32 at block 35 to prevent NaNs and infs
+                if bidx == 35:
+                    if t != mx.float32:
+                        logger.debug(
+                            "Converting activations at block 35 to float32 to prevent NaNs and infs."
+                        )
+                    latent_image_embeddings = latent_image_embeddings.astype(mx.float32)
+                    token_level_text_embeddings = token_level_text_embeddings.astype(
+                        mx.float32
                     )
-                latent_image_embeddings = latent_image_embeddings.astype(mx.float32)
-                token_level_text_embeddings = token_level_text_embeddings.astype(
-                    mx.float32
+                    modulation_inputs = modulation_inputs.astype(mx.float32)
+                latent_image_embeddings, token_level_text_embeddings = block(
+                    latent_image_embeddings,
+                    token_level_text_embeddings,
+                    modulation_inputs,
+                    positional_encodings=positional_encodings,
                 )
-                modulation_inputs = modulation_inputs.astype(mx.float32)
-            latent_image_embeddings, token_level_text_embeddings = block(
-                latent_image_embeddings,
-                token_level_text_embeddings,
-                modulation_inputs,
-                positional_encodings=positional_encodings,
-            )
-            mx.eval(latent_image_embeddings)
-            mx.eval(token_level_text_embeddings)
-            if mx.isnan(latent_image_embeddings).any():
-                raise ValueError(
-                    f"NaN detected in latent_image_embeddings at block {bidx}"
-                )
-            if (
-                token_level_text_embeddings is not None
-                and mx.isnan(token_level_text_embeddings).any()
-            ):
-                raise ValueError(
-                    f"NaN detected in token_level_text_embeddings at block {bidx}"
-                )
-            if bidx == 35:
-                latent_image_embeddings = latent_image_embeddings.astype(t)
-                if token_level_text_embeddings is not None:
-                    token_level_text_embeddings = token_level_text_embeddings.astype(t)
-                modulation_inputs = modulation_inputs.astype(t)
+                mx.eval(latent_image_embeddings)
+                mx.eval(token_level_text_embeddings)
+                if mx.isnan(latent_image_embeddings).any():
+                    raise ValueError(
+                        f"NaN detected in latent_image_embeddings at block {bidx}"
+                    )
+                if (
+                    token_level_text_embeddings is not None
+                    and mx.isnan(token_level_text_embeddings).any()
+                ):
+                    raise ValueError(
+                        f"NaN detected in token_level_text_embeddings at block {bidx}"
+                    )
+                if bidx == 35:
+                    latent_image_embeddings = latent_image_embeddings.astype(t)
+                    if token_level_text_embeddings is not None:
+                        token_level_text_embeddings = token_level_text_embeddings.astype(t)
+                    modulation_inputs = modulation_inputs.astype(t)
 
-        # UnimodalTransformer layers
-        if self.config.depth_unimodal > 0:
-            latent_image_embeddings = mx.concatenate(
+        # UnifiedTransformerBlock layers
+        if self.config.depth_unified > 0:
+            latent_unified_embeddings = mx.concatenate(
                 (token_level_text_embeddings, latent_image_embeddings), axis=-1
             )
 
-            for block in self.unimodal_transformer_blocks:
-                latent_image_embeddings = block(
-                    latent_image_embeddings,
+            for block in self.unified_transformer_blocks:
+                latent_unified_embeddings = block(
+                    latent_unified_embeddings,
                     modulation_inputs,
-                    None,
-                    # FIXME(atiorh): RoPE is only supported for MultiModalTransformerBlock
                     positional_encodings=positional_encodings
                 )
 
         # Final layer
-        latent_image_embeddings = self.final_layer(
-            latent_image_embeddings, modulation_inputs
+        latent_unified_embeddings = self.final_layer(
+            latent_unified_embeddings, modulation_inputs
         )
         return unpatchify(
-            latent_image_embeddings,
+            latent_unified_embeddings,
             patch_size=self.config.patch_size,
             target_height=latent_height,
             target_width=latent_width,
@@ -267,14 +266,20 @@ class TimestepAdapter(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, config: MMDiTConfig, skip_post_sdpa: bool = False):
+    def __init__(self,
+                 config: MMDiTConfig,
+                 skip_post_sdpa: bool = False):
         super().__init__()
         self.config = config
+        self.parallel_mlp = config.parallel_mlp_for_unified_blocks
+        self.skip_post_sdpa = skip_post_sdpa
+
         self.norm1 = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.attn = Attention(config.hidden_size, config.num_heads)
-        self.norm2 = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        if not self.parallel_mlp:
+            # If parallel, reuse norm1 across attention and mlp
+            self.norm2 = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
-        self.skip_post_sdpa = skip_post_sdpa
         if skip_post_sdpa:
             self.attn.o_proj = nn.Identity()
         else:
@@ -284,7 +289,13 @@ class TransformerBlock(nn.Module):
                 activation_fn=nn.GELU(),
             )
 
-        self.num_modulation_params = 6 if not skip_post_sdpa else 2
+        num_modulation_params = 6
+        if self.parallel_mlp:
+            num_modulation_params = 3
+        elif skip_post_sdpa:
+            num_modulation_params = 2
+
+        self.num_modulation_params = num_modulation_params
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
             nn.Linear(
@@ -309,25 +320,34 @@ class TransformerBlock(nn.Module):
         post_norm1_residual_scale = modulation_params[1]
 
         # LayerNorm and modulate before SDPA
-        pre_attn = affine_transform(
+        modulated_pre_attention = affine_transform(
             self.norm1(tensor),
             shift=post_norm1_shift,
             residual_scale=post_norm1_residual_scale,
         )
 
-        q = self.attn.q_proj(pre_attn)
-        k = self.attn.k_proj(pre_attn)
-        v = self.attn.v_proj(pre_attn)
+        q = self.attn.q_proj(modulated_pre_attention)
+        k = self.attn.k_proj(modulated_pre_attention)
+        v = self.attn.v_proj(modulated_pre_attention)
 
         if self.config.use_qk_norm:
             q, k = self.qk_norm(q, k)
 
         results = {"q": q, "k": k, "v": v}
 
-        if len(modulation_params) > 2:
-            results.update(
-                {
-                    "post_attn_scale": modulation_params[2],
+        results["modulated_pre_attention"] = modulated_pre_attention
+
+        assert len(modulation_params) in [2, 3, 6]
+        results.update({
+            "post_norm1_shift": post_norm1_shift,
+            "post_norm1_residual_scale": post_norm1_residual_scale,
+        })
+
+        if len(modulation_params) == 3:
+            results.update({"post_attn_scale": modulation_params[2]})
+
+        if len(modulation_params) == 6:
+            results.update({
                     "post_norm2_shift": modulation_params[3],
                     "post_norm2_residual_scale": modulation_params[4],
                     "post_mlp_scale": modulation_params[5],
@@ -340,20 +360,31 @@ class TransformerBlock(nn.Module):
         self,
         residual: mx.array,
         sdpa_output: mx.array,
-        post_attn_scale: mx.array,
-        post_norm2_shift: mx.array,
-        post_norm2_residual_scale: mx.array,
-        post_mlp_scale: mx.array,
-        **kwargs,
+        modulated_pre_attention: mx.array,
+        post_attn_scale: Optional[mx.array],
+        post_norm2_shift: Optional[mx.array],
+        post_norm2_residual_scale: Optional[mx.array],
+        post_mlp_scale: Optional[mx.array],
+        **kwargs
     ):
-        residual = residual + self.attn.o_proj(sdpa_output) * post_attn_scale
-        return residual + post_mlp_scale * self.mlp(
-            affine_transform(
-                self.norm2(residual),
-                shift=post_norm2_shift,
-                residual_scale=post_norm2_residual_scale,
+        attention_out = self.attn.o_proj(sdpa_output)
+        if self.parallel_mlp:
+            # Reuse the modulation parameters and self.norm1 across attn and mlp
+            mlp_out = self.mlp(modulated_pre_attention)
+            return residual + \
+                post_attn_scale * (attention_out + mlp_out)
+        else:
+            # Apply separate modulation parameters and LayerNorm across attn and mlp
+            mlp_out = self.mlp(
+                affine_transform(
+                    self.norm2(residual),
+                    shift=post_norm2_shift,
+                    residual_scale=post_norm2_residual_scale,
+                )
             )
-        )
+            return residual + \
+                attention_out * post_attn_scale + \
+                post_mlp_scale * mlp_out
 
     def __call__(self):
         raise NotImplementedError("This module is not intended to be used directly")
@@ -455,53 +486,64 @@ class MultiModalTransformerBlock(nn.Module):
         return latent_image_embeddings, token_level_text_embeddings
 
 
-# Code snippet from https://github.com/black-forest-labs/flux/tree/main
-class UniModalTransformerBlock(nn.Module):
+class UnifiedTransformerBlock(nn.Module):
     def __init__(self, config: MMDiTConfig):
         super().__init__()
-        self.hidden_dim = config.hidden_size
-        self.num_heads = config.num_heads
-        head_dim = self.hidden_dim // self.num_heads
-        self.scale = (
-            config.qk_scale or head_dim**-0.5
-        )  # FIXME(arda): qk_scale is not defined in MMDiTConfig
+        self.transformer_block = TransformerBlock(
+            config, num_modulation_params=3)
 
-        self.mlp_hidden_dim = int(self.hidden_dim * config.mlp_ratio)
-        # qkv and mlp_in
-        self.linear1 = nn.Linear(
-            self.hidden_dim, self.hidden_dim * 3 + self.mlp_hidden_dim
-        )
-        # proj and mlp_out
-        self.linear2 = nn.Linear(self.hidden_dim + self.mlp_hidden_dim, self.hidden_dim)
+        sdpa_impl = mx.fast.scaled_dot_product_attention
+        self.sdpa = partial(sdpa_impl)
 
-        self.norm = QKNorm(head_dim)
+        self.config = config
+        self.per_head_dim = config.hidden_size // config.num_heads
 
-        self.pre_norm = LayerNorm(self.hidden_dim, eps=1e-6)
-
-        self.mlp_act = nn.GELU()
-        self.modulation = Modulation(self.hidden_dim, double=False)
-
-    # FIXME(arda): check it, won't work
-    def __call__(self, x: mx.array, vec: mx.array, pe: mx.array) -> mx.array:
-        mod, _ = self.modulation(vec)
-        x_mod = (1 + mod.scale) * self.pre_norm(x) + mod.shift
-        qkv, mlp = mx.split(
-            self.linear1(x_mod), [3 * self.hidden_size, self.mlp_hidden_dim], dim=-1
+    def __call__(
+        self,
+        latent_unified_embeddings: mx.array,  # latent image embeddings
+        modulation_inputs: mx.array,  # pooled text embeddings + timestep embeddings
+        positional_encodings: mx.array = None,  # positional encodings for rope
+    ):
+        # Prepare multi-modal SDPA inputs
+        intermediates = self.transformer_block.pre_sdpa(
+            latent_unified_embeddings, modulation_inputs=modulation_inputs
         )
 
-        B, L, _ = qkv.shape
-        K, H = 3, self.num_heads
-        q, k, v = mx.transpose(qkv, [2, 0, 3, 1, 4]).reshape(
-            K, B, H, L, -1
-        )  # FIXME(arda): rearrange(qkv, "B L (K H D) -> K B H L D", K=3, H=self.num_heads)
-        q, k = self.norm(q, k, v)
-        # TODO(arda): do rope, then sdpa
-        attn = mx.fast.scaled_dot_product_attention(
-            q, k, v, scale=self.scale
-        )  # FIXME(arda):
+        batch = latent_unified_embeddings.shape[0]
 
-        output = self.linear2(mx.concat(attn, self.mlp_act(mlp), dim=-1))
-        return x + mod.gate * output
+        def rearrange_for_sdpa(t):
+            # Target data layout: (batch, head, seq_len, channel)
+            return t.reshape(
+                batch, -1, self.config.num_heads, self.per_head_dim
+            ).transpose(0, 2, 1, 3)
+
+        multimodal_sdpa_inputs = {
+            "q": rearrange_for_sdpa(intermediates["q"]),
+            "k": rearrange_for_sdpa(intermediates["k"]),
+            "v": rearrange_for_sdpa(intermediates["v"]),
+            "scale": 1.0 / np.sqrt(self.per_head_dim),
+        }
+
+        if self.config.pos_embed_type == PositionalEncoding.PreSDPARope:
+            assert positional_encodings is not None
+            RoPE.apply(multimodal_sdpa_inputs["q"], positional_encodings)
+            RoPE.apply(multimodal_sdpa_inputs["k"], positional_encodings)
+
+        # Compute multi-modal SDPA
+        sdpa_outputs = (
+            self.sdpa(**multimodal_sdpa_inputs)
+            .transpose(0, 2, 1, 3)
+            .reshape(batch, -1, 1, self.config.hidden_size)
+        )
+
+        # Post-SDPA layers
+        latent_unified_embeddings = self.image_transformer_block.post_sdpa(
+            residual=latent_unified_embeddings,
+            sdpa_output=sdpa_outputs,
+            **intermediates,
+        )
+
+        return latent_unified_embeddings
 
 
 class QKNorm(nn.Module):
@@ -514,31 +556,6 @@ class QKNorm(nn.Module):
         q = self.q_norm(q.astype(mx.float32))
         k = self.k_norm(k.astype(mx.float32))
         return q, k
-
-
-# FIXME(arda): Reuse our dict impl above for modulation outputs
-@dataclass
-class ModulationOut:
-    shift: mx.array
-    scale: mx.array
-    gate: mx.array
-
-
-# FIXME(arda): check it
-class Modulation(nn.Module):
-    def __init__(self, hidden_dim, double=False):
-        super().__init__()
-        self.is_double = double
-        self.multiplier = 6 if double else 2
-        self.lin = nn.Linear(hidden_dim, hidden_dim * self.multiplier, bias=True)
-
-    def __call__(self, x: mx.array) -> mx.array:
-        out = self.lin(nn.SiLU()(x)[:, None, :].split(self.multiplier, axis=-1))
-
-        return (
-            ModulationOut(*out[:3]),
-            ModulationOut(*out[3:]) if self.is_double else None,
-        )
 
 
 class FinalLayer(nn.Module):

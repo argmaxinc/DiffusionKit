@@ -22,13 +22,16 @@ class MMDiTConfig:
 
     # Transformer spec
     num_heads: int = 24
-    depth: int = 24  # 24, 38
-    depth_unimodal: int = 0
+    depth_multimodal: int = 24  # e.g. SD3: 24 (2b) or 38 (8b), FLUX.1: 19
+    depth_unified: int = 0      # e.g. SD3: 0 (2b and 8b),      FLUX.1: 38
+    parallel_mlp_for_unified_blocks: bool = True # e.g. FLUX.1 unified blocks, https://arxiv.org/pdf/2302.05442
     mlp_ratio: int = 4
     vae_latent_dim: int = 16  # = in_channels = out_channels
     layer_norm_eps: float = 1e-6
     pos_embed_type: PositionalEncoding = PositionalEncoding.LearnedInputEmbedding
     rope_axes_dim: Optional[Tuple[int]] = None
+    # FLUX uses RMSNorm post-QK projection
+    use_qk_norm: bool = False
 
     # 64 * self.depth is the SD3 convention, but can be overridden
     hidden_size_override: Optional[int] = None
@@ -45,29 +48,29 @@ class MMDiTConfig:
     patchify_via_reshape: bool = False
 
     # y: Text input spec
-    # e.g. SD3: 768 (CLIP-L/14) + 1280 (CLIP-G/14) = 2048
+    # e.g. SD3:    768 (CLIP-L/14) + 1280 (CLIP-G/14) = 2048
+    #      FLUX.1: 768 (CLIP-L/14)                    = 768
     pooled_text_embed_dim: int = 2048
-    # e.g. SD3: 4096 (T5-XXL) = 768 (CLIP-L/14) + 1280 (CLIP-G/14) + 2048 (zero padding)
+    # e.g. SD3:  4096 (T5-XXL) = 768 (CLIP-L/14) + 1280 (CLIP-G/14) + 2048 (zero padding)
+    #      FLUX: 4096 (T5-XXL)
     token_level_text_embed_dim: int = 4096
 
     # t: Timestep input spec
     frequency_embed_dim: int = 256
     max_period: int = 10000
 
-    # qk norm
-    use_qk_norm: bool = False
-    qk_scale: float = 1.0
-
     dtype: mx.Dtype = mx.float16
 
 
-SD3_8b = MMDiTConfig(depth=38, num_heads=38)
-SD3_2b = MMDiTConfig(depth=24, num_heads=24)
+SD3_8b = MMDiTConfig(depth_multimodal=38, num_heads=38)
+SD3_2b = MMDiTConfig(depth_multimodal=24, num_heads=24)
 
 FLUX_SCHNELL = MMDiTConfig(
     num_heads=24,
-    depth=19,
-    depth_unimodal=38,
+    depth_multimodal=19,
+    depth_unified=38,
+    parallel_mlp_for_unified_blocks=True,
+    hidden_size_override=3072,
     patchify_via_reshape=True,
     pos_embed_type=PositionalEncoding.PreSDPARope,
     rope_axes_dim=(16, 56, 56),
