@@ -77,6 +77,7 @@ FLUX_SCHNELL = MMDiTConfig(
     pos_embed_type=PositionalEncoding.PreSDPARope,
     rope_axes_dim=(16, 56, 56),
     pooled_text_embed_dim=768,  # CLIP-L/14 only
+    use_qk_norm=True,
 )
 
 

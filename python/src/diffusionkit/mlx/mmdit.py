@@ -9,7 +9,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 from argmaxtools.utils import get_logger
-from beartype.typing import Tuple, List, Dict, Optional
+from beartype.typing import Dict, List, Optional, Tuple
 
 from .config import MMDiTConfig, PositionalEncoding
 
@@ -38,7 +38,9 @@ class MMDiT(nn.Module):
                 axes_dim=config.rope_axes_dim,
             )
         else:
-            raise ValueError(f"Unsupported positional encoding type: {config.pos_embed_type}")
+            raise ValueError(
+                f"Unsupported positional encoding type: {config.pos_embed_type}"
+            )
 
         self.y_embedder = PooledTextEmbeddingAdapter(config)
         self.t_embedder = TimestepAdapter(config)
@@ -80,8 +82,9 @@ class MMDiT(nn.Module):
 
         latent_image_embeddings = self.x_embedder(latent_image_embeddings)
         if self.x_pos_embedder is not None:
-            latent_image_embeddings = latent_image_embeddings + \
-                self.x_pos_embedder(latent_image_embeddings)
+            latent_image_embeddings = latent_image_embeddings + self.x_pos_embedder(
+                latent_image_embeddings
+            )
 
         latent_image_embeddings = latent_image_embeddings.reshape(
             batch, -1, 1, self.config.hidden_size
@@ -131,7 +134,9 @@ class MMDiT(nn.Module):
                 if bidx == 35:
                     latent_image_embeddings = latent_image_embeddings.astype(t)
                     if token_level_text_embeddings is not None:
-                        token_level_text_embeddings = token_level_text_embeddings.astype(t)
+                        token_level_text_embeddings = (
+                            token_level_text_embeddings.astype(t)
+                        )
                     modulation_inputs = modulation_inputs.astype(t)
 
         # UnifiedTransformerBlock layers
@@ -144,7 +149,7 @@ class MMDiT(nn.Module):
                 latent_unified_embeddings = block(
                     latent_unified_embeddings,
                     modulation_inputs,
-                    positional_encodings=positional_encodings
+                    positional_encodings=positional_encodings,
                 )
 
         # Final layer
@@ -173,7 +178,7 @@ class LatentImageAdapter(nn.Module):
         kernel_size = stride = config.patch_size
 
         if config.patchify_via_reshape:
-            in_dim *= config.patch_size ** 2
+            in_dim *= config.patch_size**2
             kernel_size = stride = 1
 
         self.proj = nn.Conv2d(
@@ -187,8 +192,11 @@ class LatentImageAdapter(nn.Module):
         if self.config.patchify_via_reshape:
             b, h, w, c = x.shape
             p = self.config.patch_size
-            x = x.reshape(b, h // p, p, w // p, p, c).transpose(
-                    0, 1, 3, 5, 2, 4).reshape(b, h // p, w // p, -1)
+            x = (
+                x.reshape(b, h // p, p, w // p, p, c)
+                .transpose(0, 1, 3, 5, 2, 4)
+                .reshape(b, h // p, w // p, -1)
+            )
 
         return self.proj(x)
 
@@ -265,9 +273,7 @@ class TimestepAdapter(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self,
-                 config: MMDiTConfig,
-                 skip_post_sdpa: bool = False):
+    def __init__(self, config: MMDiTConfig, skip_post_sdpa: bool = False):
         super().__init__()
         self.config = config
         self.parallel_mlp = config.parallel_mlp_for_unified_blocks
@@ -305,10 +311,11 @@ class TransformerBlock(nn.Module):
         if config.use_qk_norm:
             self.qk_norm = QKNorm(config.hidden_size // config.num_heads)
 
-    def pre_sdpa(self,
-                 tensor: mx.array,
-                 modulation_inputs: mx.array,
-                 ) -> Dict[str, mx.array]:
+    def pre_sdpa(
+        self,
+        tensor: mx.array,
+        modulation_inputs: mx.array,
+    ) -> Dict[str, mx.array]:
         # Project Adaptive LayerNorm modulation parameters
         modulation_params = self.adaLN_modulation(modulation_inputs)
         modulation_params = mx.split(
@@ -337,16 +344,19 @@ class TransformerBlock(nn.Module):
         results["modulated_pre_attention"] = modulated_pre_attention
 
         assert len(modulation_params) in [2, 3, 6]
-        results.update({
-            "post_norm1_shift": post_norm1_shift,
-            "post_norm1_residual_scale": post_norm1_residual_scale,
-        })
+        results.update(
+            {
+                "post_norm1_shift": post_norm1_shift,
+                "post_norm1_residual_scale": post_norm1_residual_scale,
+            }
+        )
 
         if len(modulation_params) == 3:
             results.update({"post_attn_scale": modulation_params[2]})
 
         if len(modulation_params) == 6:
-            results.update({
+            results.update(
+                {
                     "post_norm2_shift": modulation_params[3],
                     "post_norm2_residual_scale": modulation_params[4],
                     "post_mlp_scale": modulation_params[5],
@@ -364,14 +374,13 @@ class TransformerBlock(nn.Module):
         post_norm2_shift: Optional[mx.array],
         post_norm2_residual_scale: Optional[mx.array],
         post_mlp_scale: Optional[mx.array],
-        **kwargs
+        **kwargs,
     ):
         attention_out = self.attn.o_proj(sdpa_output)
         if self.parallel_mlp:
             # Reuse the modulation parameters and self.norm1 across attn and mlp
             mlp_out = self.mlp(modulated_pre_attention)
-            return residual + \
-                post_attn_scale * (attention_out + mlp_out)
+            return residual + post_attn_scale * (attention_out + mlp_out)
         else:
             # Apply separate modulation parameters and LayerNorm across attn and mlp
             mlp_out = self.mlp(
@@ -381,9 +390,7 @@ class TransformerBlock(nn.Module):
                     residual_scale=post_norm2_residual_scale,
                 )
             )
-            return residual + \
-                attention_out * post_attn_scale + \
-                post_mlp_scale * mlp_out
+            return residual + attention_out * post_attn_scale + post_mlp_scale * mlp_out
 
     def __call__(self):
         raise NotImplementedError("This module is not intended to be used directly")
@@ -487,8 +494,7 @@ class MultiModalTransformerBlock(nn.Module):
 class UnifiedTransformerBlock(nn.Module):
     def __init__(self, config: MMDiTConfig):
         super().__init__()
-        self.transformer_block = TransformerBlock(
-            config, num_modulation_params=3)
+        self.transformer_block = TransformerBlock(config)
 
         sdpa_impl = mx.fast.scaled_dot_product_attention
         self.sdpa = partial(sdpa_impl)
@@ -638,8 +644,8 @@ class LayerNorm(nn.Module):
 
 
 class RoPE(nn.Module):
-    """ Custom RoPE implementation for FLUX
-    """
+    """Custom RoPE implementation for FLUX"""
+
     def __init__(self, theta: int, axes_dim: List[int]) -> None:
         super().__init__()
         self.theta = theta
@@ -650,47 +656,66 @@ class RoPE(nn.Module):
         self.last_image_resolution = None
         self.last_text_sequence_length = None
 
-    def _get_positions(self, latent_image_resolution: Tuple[int], text_sequence_length: int) -> mx.array:
+    def _get_positions(
+        self, latent_image_resolution: Tuple[int], text_sequence_length: int
+    ) -> mx.array:
         h, w = latent_image_resolution
-        image_positions = mx.stack([
-            mx.zeros((h, w)),
-            mx.repeat(mx.arange(h)[:, None], w, axis=1),
-            mx.repeat(mx.arange(w)[None, :], h, axis=0),
-        ], axis=-1).flatten(0, 1)  # (h * w, 3)
+        image_positions = mx.stack(
+            [
+                mx.zeros((h, w)),
+                mx.repeat(mx.arange(h)[:, None], w, axis=1),
+                mx.repeat(mx.arange(w)[None, :], h, axis=0),
+            ],
+            axis=-1,
+        ).flatten(
+            0, 1
+        )  # (h * w, 3)
 
-        text_and_image_positions = mx.concatenate([
-            mx.zeros((text_sequence_length, 3)),
-            image_positions,
-        ], axis=0)[None]  # (text_sequence_length + h * w, 3)
+        text_and_image_positions = mx.concatenate(
+            [
+                mx.zeros((text_sequence_length, 3)),
+                image_positions,
+            ],
+            axis=0,
+        )[
+            None
+        ]  # (text_sequence_length + h * w, 3)
 
         return text_and_image_positions
 
     def rope(self, positions: mx.array, dim: int, theta: int = 10_000) -> mx.array:
         def _rope_per_dim(positions, dim, theta):
             scale = mx.arange(0, dim, 2, dtype=mx.float32) / dim
-            omega = 1.0 / (theta ** scale)
+            omega = 1.0 / (theta**scale)
             out = mx.einsum("bn,d->bnd", positions, omega)
-            return mx.stack([
-                mx.cos(out), -mx.sin(out), mx.sin(out), mx.cos(out)
-            ], axis=-1).reshape(*positions.shape, dim // 2, 2, 2)
+            return mx.stack(
+                [mx.cos(out), -mx.sin(out), mx.sin(out), mx.cos(out)], axis=-1
+            ).reshape(*positions.shape, dim // 2, 2, 2)
 
-        return mx.concatenate([
-            _rope_per_dim(
-                positions=positions[..., i],
-                dim=self.axes_dim[i],
-                theta=self.theta
-            ) for i in range(len(self.axes_dim))
-        ], axis=-3).astype(positions.dtype)
+        return mx.concatenate(
+            [
+                _rope_per_dim(
+                    positions=positions[..., i], dim=self.axes_dim[i], theta=self.theta
+                )
+                for i in range(len(self.axes_dim))
+            ],
+            axis=-3,
+        ).astype(positions.dtype)
 
-    def __call__(self, latent_image_resolution: Tuple[int], text_sequence_length: int) -> mx.array:
-        identical_to_last_call = \
-            latent_image_resolution == self.last_image_resolution and \
-            text_sequence_length == self.last_text_sequence_length
+    def __call__(
+        self, latent_image_resolution: Tuple[int], text_sequence_length: int
+    ) -> mx.array:
+        identical_to_last_call = (
+            latent_image_resolution == self.last_image_resolution
+            and text_sequence_length == self.last_text_sequence_length
+        )
 
         if self.rope_embeddings is None or not identical_to_last_call:
             self.last_image_resolution = latent_image_resolution
             self.last_text_sequence_length = text_sequence_length
-            positions = self._get_positions(latent_image_resolution, text_sequence_length)
+            positions = self._get_positions(
+                latent_image_resolution, text_sequence_length
+            )
             self.rope_embeddings = self.rope(positions, self.theta)
         else:
             print("Returning cached RoPE embeddings")
@@ -701,7 +726,9 @@ class RoPE(nn.Module):
     def apply(q_or_k: mx.array, rope: mx.array) -> mx.array:
         in_dtype = q_or_k.dtype
         q_or_k = q_or_k.astype(mx.float32).reshape(*q_or_k.shape[:-1], -1, 1, 2)
-        return (rope[..., 0] * q_or_k[..., 0] + rope[..., 1] * q_or_k[..., 1]).astype(in_dtype)
+        return (rope[..., 0] * q_or_k[..., 0] + rope[..., 1] * q_or_k[..., 1]).astype(
+            in_dtype
+        )
 
 
 def affine_transform(
