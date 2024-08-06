@@ -3,7 +3,6 @@
 # Copyright (C) 2024 Argmax, Inc. All Rights Reserved.
 #
 
-from dataclasses import dataclass
 from functools import partial
 
 import mlx.core as mx
@@ -447,7 +446,6 @@ class MultiModalTransformerBlock(nn.Module):
             "scale": 1.0 / np.sqrt(self.per_head_dim),
         }
 
-        # TESTME(atiorh)
         if self.config.pos_embed_type == PositionalEncoding.PreSDPARope:
             assert positional_encodings is not None
             RoPE.apply(multimodal_sdpa_inputs["q"], positional_encodings)

@@ -216,7 +216,7 @@ class DiffusionPipeline:
             x_T = SD3LatentFormat().process_in(x_T)
         noise = self.get_noise(seed, x_T)
         sigmas = self.get_sigmas(self.sampler, num_steps)
-        sigmas = sigmas[int(num_steps * (1 - denoise)) :]
+        sigmas = sigmas[int(num_steps * (1 - denoise)):]
         extra_args = {
             "conditioning": conditioning,
             "cfg_weight": cfg_weight,

@@ -24,7 +24,7 @@ class MMDiTConfig:
     num_heads: int = 24
     depth_multimodal: int = 24  # e.g. SD3: 24 (2b) or 38 (8b), FLUX.1: 19
     depth_unified: int = 0      # e.g. SD3: 0 (2b and 8b),      FLUX.1: 38
-    parallel_mlp_for_unified_blocks: bool = True # e.g. FLUX.1 unified blocks, https://arxiv.org/pdf/2302.05442
+    parallel_mlp_for_unified_blocks: bool = True  # e.g. FLUX.1 unified blocks, https://arxiv.org/pdf/2302.05442
     mlp_ratio: int = 4
     vae_latent_dim: int = 16  # = in_channels = out_channels
     layer_norm_eps: float = 1e-6
