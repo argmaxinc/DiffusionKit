@@ -80,8 +80,9 @@ class MMDiT(nn.Module):
         )
         token_level_text_embeddings = self.context_embedder(token_level_text_embeddings)
 
-        latent_image_embeddings = self.x_embedder(latent_image_embeddings) + \
-            self.x_pos_embedder(latent_image_embeddings)
+        latent_image_embeddings = self.x_embedder(
+            latent_image_embeddings
+        ) + self.x_pos_embedder(latent_image_embeddings)
 
         latent_image_embeddings = latent_image_embeddings.reshape(
             batch, -1, 1, self.config.hidden_size
@@ -104,7 +105,8 @@ class MMDiT(nn.Module):
                     if t != mx.float32:
                         logger.debug(
                             "config.upcast_multimodal_blocks: "
-                            f"Upcasting activations at multimodal_block {bidx} to float32")
+                            f"Upcasting activations at multimodal_block {bidx} to float32"
+                        )
                     latent_image_embeddings = latent_image_embeddings.astype(mx.float32)
                     token_level_text_embeddings = token_level_text_embeddings.astype(
                         mx.float32
@@ -130,7 +132,9 @@ class MMDiT(nn.Module):
                         f"NaN detected in token_level_text_embeddings at block {bidx}"
                     )
                 if bidx in (self.config.upcast_multimodal_blocks or []):
-                    logger.debug(f"Recasting to original dtype for multimodal_block index {bidx}")
+                    logger.debug(
+                        f"Recasting to original dtype for multimodal_block index {bidx}"
+                    )
                     latent_image_embeddings = latent_image_embeddings.astype(t)
                     if token_level_text_embeddings is not None:
                         token_level_text_embeddings = (
@@ -149,8 +153,11 @@ class MMDiT(nn.Module):
                     if t != mx.float32:
                         logger.debug(
                             "config.upcast_unified_blocks: "
-                            f"Upcasting activations at unified_block {bidx} to float32")
-                    latent_unified_embeddings = latent_unified_embeddings.astype(mx.float32)
+                            f"Upcasting activations at unified_block {bidx} to float32"
+                        )
+                    latent_unified_embeddings = latent_unified_embeddings.astype(
+                        mx.float32
+                    )
                     modulation_inputs = modulation_inputs.astype(mx.float32)
                     positional_encodings = positional_encodings.astype(mx.float32)
 
@@ -160,7 +167,9 @@ class MMDiT(nn.Module):
                     positional_encodings=positional_encodings,
                 )
                 if bidx in (self.config.upcast_unified_blocks or []):
-                    logger.debug(f"Recasting to original dtype for unified_block index {bidx}")
+                    logger.debug(
+                        f"Recasting to original dtype for unified_block index {bidx}"
+                    )
                     latent_unified_embeddings = latent_unified_embeddings.astype(t)
                     modulation_inputs = modulation_inputs.astype(t)
                     positional_encodings = positional_encodings.astype(t)
@@ -508,9 +517,6 @@ class UnifiedTransformerBlock(nn.Module):
     def __init__(self, config: MMDiTConfig):
         super().__init__()
         self.transformer_block = TransformerBlock(config)
-        self.transformer_block.attn.o_proj = (
-            nn.Identity()
-        )  # FIXME(arda): make this configurable
 
         sdpa_impl = mx.fast.scaled_dot_product_attention
         self.sdpa = partial(sdpa_impl)
