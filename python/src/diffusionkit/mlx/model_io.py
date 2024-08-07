@@ -16,6 +16,7 @@ from transformers import T5Config
 
 from .clip import CLIPTextModel
 from .config import (
+    FLUX_SCHNELL,
     AutoencoderConfig,
     CLIPTextModelConfig,
     SD3_2b,
@@ -36,6 +37,10 @@ _MMDIT = {
     "stabilityai/stable-diffusion-3-medium": {
         "mmdit_2b": "sd3_medium.safetensors",
         "vae": "sd3_medium.safetensors",
+    },
+    "argmaxinc/flux": {
+        "flux": "flux-schnell.safetensors",
+        "vae": "ae.safetensors",
     },
 }
 _DEFAULT_MODEL = "argmaxinc/stable-diffusion"
@@ -66,9 +71,13 @@ LOCAl_SD3_CKPT = None
 
 
 # TODO: Implement state_dict_adjustments
-def flux_state_dict_adjustments(state_dict, prefix=""):
+def flux_state_dict_adjustments(state_dict, prefix="", hidden_size=3072, mlp_ratio=4):
     state_dict = {
         k.replace("double_blocks", "multimodal_transformer_blocks"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("single_blocks", "unified_transformer_blocks"): v
         for k, v in state_dict.items()
     }
 
@@ -125,13 +134,128 @@ def flux_state_dict_adjustments(state_dict, prefix=""):
 
     state_dict = {k.replace(".proj", ".o_proj"): v for k, v in state_dict.items()}
 
-    # FIXME: single_blocks
     state_dict = {
-        k.replace("single_blocks.", "unimodal_transformer_blocks."): v
+        k.replace(".attn.norm.key_norm.scale", ".qk_norm.k_norm.weight"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace(".attn.norm.query_norm.scale", ".qk_norm.q_norm.weight"): v
         for k, v in state_dict.items()
     }
 
-    # TODO: qk norm
+    state_dict = {
+        k.replace(".modulation.lin", ".transformer_block.adaLN_modulation.layers.1"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace(".norm.key_norm.scale", ".transformer_block.qk_norm.k_norm.weight"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace(
+            ".norm.query_norm.scale", ".transformer_block.qk_norm.q_norm.weight"
+        ): v
+        for k, v in state_dict.items()
+    }
+
+    # Split qkv proj and mlp in unified transformer block and rename:
+    keys_to_pop = []
+    state_dict_update = {}
+    for k in state_dict:
+        if ".linear1" in k:
+            keys_to_pop.append(k)
+            for name, weight in zip(
+                ["attn.q", "attn.k", "attn.v", "mlp.fc1"],
+                mx.split(
+                    state_dict[k],
+                    [
+                        hidden_size,
+                        2 * hidden_size,
+                        3 * hidden_size,
+                        (3 + mlp_ratio) * hidden_size,
+                    ],
+                ),
+            ):
+                if name == "mlp.fc1":
+                    state_dict_update[
+                        k.replace(".linear1", f".transformer_block.{name}")
+                    ] = (weight if "weight" in k else weight)
+                else:
+                    state_dict_update[
+                        k.replace(".linear1", f".transformer_block.{name}_proj")
+                    ] = (weight if "weight" in k else weight)
+
+    [state_dict.pop(k) for k in keys_to_pop]
+    state_dict.update(state_dict_update)
+
+    # Split o_proj and mlp in unified transformer block and rename:
+    keys_to_pop = []
+    state_dict_update = {}
+    for k in state_dict:
+        if ".linear2" in k:
+            keys_to_pop.append(k)
+            if "bias" in k:
+                state_dict_update[
+                    k.replace(".linear2", ".transformer_block.attn.o_proj")
+                ] = state_dict[k]
+                state_dict_update[
+                    k.replace(".linear2", ".transformer_block.mlp.fc2")
+                ] = state_dict[k]
+            else:
+                for name, weight in zip(
+                    ["attn.o", "mlp.fc2"],
+                    mx.split(
+                        state_dict[k],
+                        [hidden_size, (1 + mlp_ratio) * hidden_size],
+                        axis=1,
+                    ),
+                ):
+                    if name == "mlp.fc2":
+                        state_dict_update[
+                            k.replace(".linear2", f".transformer_block.{name}")
+                        ] = (weight if "weight" in k else weight)
+                    else:
+                        state_dict_update[
+                            k.replace(".linear2", f".transformer_block.{name}_proj")
+                        ] = (weight if "weight" in k else weight)
+
+    [state_dict.pop(k) for k in keys_to_pop]
+    state_dict.update(state_dict_update)
+
+    state_dict = {
+        k.replace("img_in.", "x_embedder.proj."): v for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("txt_in.", "context_embedder."): v for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("time_in.", "t_embedder."): v for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("vector_in.", "y_embedder."): v for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace(".in_layer.", ".mlp.layers.0."): v for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace(".out_layer.", ".mlp.layers.2."): v for k, v in state_dict.items()
+    }
+
+    state_dict = {
+        k.replace(
+            "final_layer.adaLN_modulation.1", "final_layer.adaLN_modulation.layers.1"
+        ): v
+        for k, v in state_dict.items()
+    }
+
+    # Remove k_proj bias
+    state_dict = {k: v for k, v in state_dict.items() if "k_proj.bias" not in k}
+
+    state_dict["x_embedder.proj.weight"] = mx.expand_dims(
+        mx.expand_dims(state_dict["x_embedder.proj.weight"], axis=1), axis=1
+    )
+
+    return state_dict
 
 
 def mmdit_state_dict_adjustments(state_dict, prefix=""):
@@ -531,6 +655,28 @@ def load_mmdit(
     mmdit_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, mmdit_weights)
     weights = mx.load(mmdit_weights_ckpt)
     weights = mmdit_state_dict_adjustments(weights, prefix="model.diffusion_model.")
+    weights = {k: v.astype(dtype) for k, v in weights.items()}
+    model.update(tree_unflatten(tree_flatten(weights)))
+
+    return model
+
+
+def load_flux(
+    key: str = "argmaxinc/flux",
+    float16: bool = False,
+    model_key: str = "flux",
+):
+    """Load the MM-DiT Flux model from the checkpoint file."""
+    dtype = mx.bfloat16 if float16 else mx.float32
+    config = FLUX_SCHNELL  # FIXME
+    model = MMDiT(config)
+
+    flux_weights = _MMDIT[key][model_key]
+    flux_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, flux_weights)
+    weights = mx.load(flux_weights_ckpt)
+    weights = flux_state_dict_adjustments(
+        weights, prefix="", hidden_size=config.hidden_size, mlp_ratio=config.mlp_ratio
+    )
     weights = {k: v.astype(dtype) for k, v in weights.items()}
     model.update(tree_unflatten(tree_flatten(weights)))
 

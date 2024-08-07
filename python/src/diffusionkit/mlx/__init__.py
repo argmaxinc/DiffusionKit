@@ -19,6 +19,7 @@ from PIL import Image
 
 from .model_io import (
     _DEFAULT_MODEL,
+    load_flux,
     load_mmdit,
     load_t5_encoder,
     load_t5_tokenizer,
@@ -34,6 +35,7 @@ logger = get_logger(__name__)
 MMDIT_CKPT = {
     "2b": "mmdit_2b",
     "8b": "models/sd3_8b_beta.safetensors",
+    "flux": "flux",
 }
 
 # FIXME(arda): DEBUG, delete after testing
@@ -59,11 +61,14 @@ class DiffusionPipeline:
         self.use_t5 = use_t5
         mmdit_ckpt = MMDIT_CKPT[model_size]
         self.low_memory_mode = low_memory_mode
-        self.mmdit = load_mmdit(float16=w16, model_key=mmdit_ckpt)
+        self.is_flux = IS_FLUX or is_flux
+        if is_flux:
+            self.mmdit = load_flux(float16=w16)
+        else:
+            self.mmdit = load_mmdit(float16=w16, model_key=mmdit_ckpt)
         self.sampler = ModelSamplingDiscreteFlow(shift=shift)
         self.decoder = load_vae_decoder(float16=w16)
         self.encoder = load_vae_encoder(float16=False)
-        self.is_flux = IS_FLUX or is_flux
 
         if is_flux and not use_t5:
             logger.info("FLUX model is being used without T5. Setting use_t5 to True.")
@@ -338,9 +343,11 @@ class DiffusionPipeline:
 
         # unload T5 and CLIP models after obtaining conditioning in low memory mode
         if self.low_memory_mode:
-            del self.clip_g
+            if hasattr(self, "t5_encoder"):
+                del self.t5_encoder
+            if hasattr(self, "clip_g"):
+                del self.clip_g
             del self.clip_l
-            del self.t5_encoder
             gc.collect()
 
         logger.debug(f"Conditioning dtype before casting: {conditioning.dtype}")
@@ -564,9 +571,12 @@ class CFGDenoiser(nn.Module):
     def __call__(
         self, x_t, t, conditioning, cfg_weight: float = 7.5, pooled_conditioning=None
     ):
-        x_t_mmdit = mx.concatenate([x_t] * 2, axis=0).astype(
-            self.model.activation_dtype
-        )
+        if cfg_weight == 0:
+            x_t_mmdit = x_t.astype(self.model.activation_dtype)
+        else:
+            x_t_mmdit = mx.concatenate([x_t] * 2, axis=0).astype(
+                self.model.activation_dtype
+            )
         t_mmdit = mx.broadcast_to(t, [len(x_t_mmdit)])
         timestep = self.model.sampler.timestep(t_mmdit).astype(
             self.model.activation_dtype
