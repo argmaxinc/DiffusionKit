@@ -32,7 +32,7 @@ class MMDiT(nn.Module):
             self.x_pos_embedder = LatentImagePositionalEmbedding(config)
             self.pre_sdpa_rope = nn.Identity()
         elif config.pos_embed_type == PositionalEncoding.PreSDPARope:
-            self.x_pos_embedder = nn.Identity()  # skip input positional encodings
+            # self.x_pos_embedder = nn.Identity()  # skip input positional encodings
             self.pre_sdpa_rope = RoPE(
                 theta=10000,
                 axes_dim=config.rope_axes_dim,
@@ -82,18 +82,18 @@ class MMDiT(nn.Module):
         )
         token_level_text_embeddings = self.context_embedder(token_level_text_embeddings)
 
-        latent_image_embeddings = self.x_embedder(
-            latent_image_embeddings
-        ) + self.x_pos_embedder(latent_image_embeddings)
+        latent_image_embeddings = self.x_embedder(latent_image_embeddings)
+        if hasattr(self, "x_pos_embedder"):
+            latent_image_embeddings += self.x_pos_embedder(latent_image_embeddings)
 
         latent_image_embeddings = latent_image_embeddings.reshape(
             batch, -1, 1, self.config.hidden_size
         )
 
         if self.config.pos_embed_type == PositionalEncoding.PreSDPARope:
-            positional_encodings = self.rope(
+            positional_encodings = self.pre_sdpa_rope(
                 text_sequence_length=token_level_text_embeddings.shape[1],
-                image_sequence_length=latent_image_embeddings.shape[1],
+                latent_image_resolution=(latent_height, latent_width),
             )
         else:
             positional_encodings = None
@@ -176,7 +176,9 @@ class MMDiT(nn.Module):
                     modulation_inputs = modulation_inputs.astype(t)
                     positional_encodings = positional_encodings.astype(t)
 
-            latent_image_embeddings = latent_unified_embeddings[..., -latent_image_embeddings.shape[-1]:]
+            latent_image_embeddings = latent_unified_embeddings[
+                ..., -latent_image_embeddings.shape[-1] :
+            ]
 
         # Final layer
         latent_image_embeddings = self.final_layer(
@@ -299,10 +301,12 @@ class TimestepAdapter(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self,
-                 config: MMDiTConfig,
-                 skip_post_sdpa: bool = False,
-                 num_modulation_params: Optional[int] = None):
+    def __init__(
+        self,
+        config: MMDiTConfig,
+        skip_post_sdpa: bool = False,
+        num_modulation_params: Optional[int] = None,
+    ):
         super().__init__()
         self.config = config
         self.parallel_mlp = config.parallel_mlp_for_unified_blocks
@@ -524,7 +528,8 @@ class UnifiedTransformerBlock(nn.Module):
         super().__init__()
         self.transformer_block = TransformerBlock(
             config,
-            num_modulation_params=3 if config.parallel_mlp_for_unified_blocks else 6,)
+            num_modulation_params=3 if config.parallel_mlp_for_unified_blocks else 6,
+        )
 
         sdpa_impl = mx.fast.scaled_dot_product_attention
         self.sdpa = partial(sdpa_impl)
