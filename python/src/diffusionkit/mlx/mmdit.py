@@ -175,15 +175,15 @@ class MMDiT(nn.Module):
                     latent_unified_embeddings = latent_unified_embeddings.astype(t)
                     modulation_inputs = modulation_inputs.astype(t)
                     positional_encodings = positional_encodings.astype(t)
-        else:
-            latent_unified_embeddings = latent_image_embeddings
+
+            latent_image_embeddings = latent_unified_embeddings[..., -latent_image_embeddings.shape[-1]:]
 
         # Final layer
-        latent_unified_embeddings = self.final_layer(
-            latent_unified_embeddings, modulation_inputs
+        latent_image_embeddings = self.final_layer(
+            latent_image_embeddings, modulation_inputs
         )
         return unpatchify(
-            latent_unified_embeddings,
+            latent_image_embeddings,
             patch_size=self.config.patch_size,
             target_height=latent_height,
             target_width=latent_width,
