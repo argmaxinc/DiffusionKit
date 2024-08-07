@@ -51,7 +51,9 @@ class MMDiT(nn.Module):
 
         self.multimodal_transformer_blocks = [
             MultiModalTransformerBlock(
-                config, skip_text_post_sdpa=i == config.depth_multimodal - 1
+                config,
+                skip_text_post_sdpa=(i == config.depth_multimodal - 1)
+                and (config.depth_unified < 1),
             )
             for i in range(config.depth_multimodal)
         ]
