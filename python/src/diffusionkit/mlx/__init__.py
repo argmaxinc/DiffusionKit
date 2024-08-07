@@ -37,7 +37,7 @@ MMDIT_CKPT = {
 }
 
 # FIXME(arda): DEBUG, delete after testing
-IS_FLUX = True
+IS_FLUX = False
 
 
 class DiffusionPipeline:

@@ -175,6 +175,8 @@ class MMDiT(nn.Module):
                     latent_unified_embeddings = latent_unified_embeddings.astype(t)
                     modulation_inputs = modulation_inputs.astype(t)
                     positional_encodings = positional_encodings.astype(t)
+        else:
+            latent_unified_embeddings = latent_image_embeddings
 
         # Final layer
         latent_unified_embeddings = self.final_layer(
@@ -297,7 +299,10 @@ class TimestepAdapter(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, config: MMDiTConfig, skip_post_sdpa: bool = False):
+    def __init__(self,
+                 config: MMDiTConfig,
+                 skip_post_sdpa: bool = False,
+                 num_modulation_params: Optional[int] = None):
         super().__init__()
         self.config = config
         self.parallel_mlp = config.parallel_mlp_for_unified_blocks
@@ -318,11 +323,10 @@ class TransformerBlock(nn.Module):
                 activation_fn=nn.GELU(),
             )
 
-        num_modulation_params = 6
-        if self.parallel_mlp:
-            num_modulation_params = 3
-        elif skip_post_sdpa:
-            num_modulation_params = 2
+        if num_modulation_params is None:
+            num_modulation_params = 6
+            if skip_post_sdpa:
+                num_modulation_params = 2
 
         self.num_modulation_params = num_modulation_params
         self.adaLN_modulation = nn.Sequential(
@@ -375,10 +379,10 @@ class TransformerBlock(nn.Module):
             }
         )
 
-        if len(modulation_params) == 3:
+        if len(modulation_params) > 2:
             results.update({"post_attn_scale": modulation_params[2]})
 
-        if len(modulation_params) == 6:
+        if len(modulation_params) > 3:
             results.update(
                 {
                     "post_norm2_shift": modulation_params[3],
@@ -518,7 +522,9 @@ class MultiModalTransformerBlock(nn.Module):
 class UnifiedTransformerBlock(nn.Module):
     def __init__(self, config: MMDiTConfig):
         super().__init__()
-        self.transformer_block = TransformerBlock(config)
+        self.transformer_block = TransformerBlock(
+            config,
+            num_modulation_params=3 if config.parallel_mlp_for_unified_blocks else 6,)
 
         sdpa_impl = mx.fast.scaled_dot_product_attention
         self.sdpa = partial(sdpa_impl)
