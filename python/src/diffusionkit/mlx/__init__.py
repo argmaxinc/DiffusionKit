@@ -571,7 +571,8 @@ class CFGDenoiser(nn.Module):
     def __call__(
         self, x_t, t, conditioning, cfg_weight: float = 7.5, pooled_conditioning=None
     ):
-        if cfg_weight == 0:
+        if cfg_weight <= 0:
+            logger.info("CFG Weight disabled")
             x_t_mmdit = x_t.astype(self.model.activation_dtype)
         else:
             x_t_mmdit = mx.concatenate([x_t] * 2, axis=0).astype(
@@ -593,9 +594,11 @@ class CFGDenoiser(nn.Module):
         eps_pred = self.model.sampler.calculate_denoised(
             t_mmdit, mmdit_output, x_t_mmdit
         )
-
-        eps_text, eps_neg = eps_pred.split(2)
-        return eps_neg + cfg_weight * (eps_text - eps_neg)
+        if cfg_weight <= 0:
+            return eps_pred
+        else:
+            eps_text, eps_neg = eps_pred.split(2)
+            return eps_neg + cfg_weight * (eps_text - eps_neg)
 
 
 class LatentFormat:

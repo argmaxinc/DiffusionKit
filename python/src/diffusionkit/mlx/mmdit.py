@@ -93,7 +93,10 @@ class MMDiT(nn.Module):
         if self.config.pos_embed_type == PositionalEncoding.PreSDPARope:
             positional_encodings = self.pre_sdpa_rope(
                 text_sequence_length=token_level_text_embeddings.shape[1],
-                latent_image_resolution=(latent_height, latent_width),
+                latent_image_resolution=(
+                    latent_height // self.config.patch_size,
+                    latent_width // self.config.patch_size,
+                ),
             )
         else:
             positional_encodings = None
@@ -147,10 +150,10 @@ class MMDiT(nn.Module):
         # UnifiedTransformerBlock layers
         if self.config.depth_unified > 0:
             latent_unified_embeddings = mx.concatenate(
-                (token_level_text_embeddings, latent_image_embeddings), axis=-1
+                (token_level_text_embeddings, latent_image_embeddings), axis=1
             )
 
-            for block in self.unified_transformer_blocks:
+            for bidx, block in enumerate(self.unified_transformer_blocks):
                 if bidx in (self.config.upcast_unified_blocks or []):
                     if t != mx.float32:
                         logger.debug(
@@ -177,20 +180,26 @@ class MMDiT(nn.Module):
                     positional_encodings = positional_encodings.astype(t)
 
             latent_image_embeddings = latent_unified_embeddings[
-                ..., -latent_image_embeddings.shape[-1] :
+                :, token_level_text_embeddings.shape[1] :, ...
             ]
 
         # Final layer
         latent_image_embeddings = self.final_layer(
             latent_image_embeddings, modulation_inputs
         )
-        return unpatchify(
-            latent_image_embeddings,
-            patch_size=self.config.patch_size,
-            target_height=latent_height,
-            target_width=latent_width,
-            vae_latent_dim=self.config.vae_latent_dim,
-        )
+        if self.config.patchify_via_reshape:
+            latent_image_embeddings = self.x_embedder.unpack(
+                latent_image_embeddings, (latent_height, latent_width)
+            )
+        else:
+            latent_image_embeddings = unpatchify(
+                latent_image_embeddings,
+                patch_size=self.config.patch_size,
+                target_height=latent_height,
+                target_width=latent_width,
+                vae_latent_dim=self.config.vae_latent_dim,
+            )
+        return latent_image_embeddings
 
 
 class LatentImageAdapter(nn.Module):
@@ -218,15 +227,31 @@ class LatentImageAdapter(nn.Module):
 
     def __call__(self, x: mx.array) -> mx.array:
         if self.config.patchify_via_reshape:
-            b, h, w, c = x.shape
+            b, h_latent, w_latent, c = x.shape
             p = self.config.patch_size
             x = (
-                x.reshape(b, h // p, p, w // p, p, c)
+                x.reshape(b, h_latent // p, p, w_latent // p, p, c)
                 .transpose(0, 1, 3, 5, 2, 4)
-                .reshape(b, h // p, w // p, -1)
+                .reshape(b, h_latent // p, w_latent // p, -1)
             )
 
         return self.proj(x)
+
+    def unpack(self, x: mx.array, latent_image_resolution: Tuple[int]) -> mx.array:
+        assert self.config.patchify_via_reshape
+
+        b, hw, _, c_packed = x.shape
+        p = self.config.patch_size
+        h = latent_image_resolution[0] // p
+        w = latent_image_resolution[1] // p
+        x = (
+            x.reshape(
+                b, h, w, -1, p, p
+            )  # (b, hw, 1, (c*ph*pw)) -> (b, h, w, c, ph, pw)
+            .transpose(0, 1, 4, 2, 5, 3)  # (b, h, w, c, ph, pw) -> (b, h, ph, w, pw, c)
+            .reshape(b, h * p, w * p, -1)  # (b, h, ph, w, pw, c) -> (b, h*ph, w*pw, c)
+        )
+        return x
 
 
 class LatentImagePositionalEmbedding(nn.Module):
@@ -358,11 +383,18 @@ class TransformerBlock(nn.Module):
         post_norm1_residual_scale = modulation_params[1]
 
         # LayerNorm and modulate before SDPA
-        modulated_pre_attention = affine_transform(
-            self.norm1(tensor),
-            shift=post_norm1_shift,
-            residual_scale=post_norm1_residual_scale,
-        )
+        try:
+            modulated_pre_attention = affine_transform(
+                self.norm1(tensor),
+                shift=post_norm1_shift,
+                residual_scale=post_norm1_residual_scale,
+            )
+        except Exception as e:
+            logger.error(
+                f"Error in pre_sdpa: {e}",
+                exc_info=True,
+            )
+            raise e
 
         q = self.attn.q_proj(modulated_pre_attention)
         k = self.attn.k_proj(modulated_pre_attention)
@@ -402,10 +434,10 @@ class TransformerBlock(nn.Module):
         residual: mx.array,
         sdpa_output: mx.array,
         modulated_pre_attention: mx.array,
-        post_attn_scale: Optional[mx.array],
-        post_norm2_shift: Optional[mx.array],
-        post_norm2_residual_scale: Optional[mx.array],
-        post_mlp_scale: Optional[mx.array],
+        post_attn_scale: Optional[mx.array] = None,
+        post_norm2_shift: Optional[mx.array] = None,
+        post_norm2_residual_scale: Optional[mx.array] = None,
+        post_mlp_scale: Optional[mx.array] = None,
         **kwargs,
     ):
         attention_out = self.attn.o_proj(sdpa_output)
@@ -576,7 +608,7 @@ class UnifiedTransformerBlock(nn.Module):
         )
 
         # Post-SDPA layers
-        latent_unified_embeddings = self.image_transformer_block.post_sdpa(
+        latent_unified_embeddings = self.transformer_block.post_sdpa(
             residual=latent_unified_embeddings,
             sdpa_output=sdpa_outputs,
             **intermediates,
@@ -722,7 +754,9 @@ class RoPE(nn.Module):
         def _rope_per_dim(positions, dim, theta):
             scale = mx.arange(0, dim, 2, dtype=mx.float32) / dim
             omega = 1.0 / (theta**scale)
-            out = mx.einsum("bn,d->bnd", positions, omega)
+            out = (
+                positions[..., None] * omega[None, None, :]
+            )  # mx.einsum("bn,d->bnd", positions, omega)
             return mx.stack(
                 [mx.cos(out), -mx.sin(out), mx.sin(out), mx.cos(out)], axis=-1
             ).reshape(*positions.shape, dim // 2, 2, 2)
@@ -754,6 +788,8 @@ class RoPE(nn.Module):
             self.rope_embeddings = self.rope(positions, self.theta)
         else:
             print("Returning cached RoPE embeddings")
+
+        self.rope_embeddings = mx.expand_dims(self.rope_embeddings, axis=1)
 
         return self.rope_embeddings
 
