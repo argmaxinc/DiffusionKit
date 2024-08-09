@@ -336,6 +336,7 @@ class TransformerBlock(nn.Module):
         self.config = config
         self.parallel_mlp = config.parallel_mlp_for_unified_blocks
         self.skip_post_sdpa = skip_post_sdpa
+        self.per_head_dim = config.hidden_size // config.num_heads
 
         self.norm1 = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.attn = Attention(config.hidden_size, config.num_heads)
@@ -400,8 +401,21 @@ class TransformerBlock(nn.Module):
         k = self.attn.k_proj(modulated_pre_attention)
         v = self.attn.v_proj(modulated_pre_attention)
 
+        batch = tensor.shape[0]
+
+        def rearrange_for_norm(t):
+            # Target data layout: (batch, head, seq_len, channel)
+            return t.reshape(
+                batch, -1, self.config.num_heads, self.per_head_dim
+            ).transpose(0, 2, 1, 3)
+
         if self.config.use_qk_norm:
+            # FIXME: This is a temporary workaround to avoid a bug in the current implementation
+            q = rearrange_for_norm(q)
+            k = rearrange_for_norm(k)
             q, k = self.qk_norm(q, k)
+            q = q.transpose(0, 2, 1, 3).reshape(batch, -1, 1, self.config.hidden_size)
+            k = k.transpose(0, 2, 1, 3).reshape(batch, -1, 1, self.config.hidden_size)
 
         results = {"q": q, "k": k, "v": v}
 
