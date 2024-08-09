@@ -533,8 +533,12 @@ class MultiModalTransformerBlock(nn.Module):
 
         if self.config.pos_embed_type == PositionalEncoding.PreSDPARope:
             assert positional_encodings is not None
-            RoPE.apply(multimodal_sdpa_inputs["q"], positional_encodings)
-            RoPE.apply(multimodal_sdpa_inputs["k"], positional_encodings)
+            multimodal_sdpa_inputs["q"] = RoPE.apply(
+                multimodal_sdpa_inputs["q"], positional_encodings
+            )
+            multimodal_sdpa_inputs["k"] = RoPE.apply(
+                multimodal_sdpa_inputs["k"], positional_encodings
+            )
 
         # Compute multi-modal SDPA
         sdpa_outputs = (
@@ -811,8 +815,10 @@ class RoPE(nn.Module):
     def apply(q_or_k: mx.array, rope: mx.array) -> mx.array:
         in_dtype = q_or_k.dtype
         q_or_k = q_or_k.astype(mx.float32).reshape(*q_or_k.shape[:-1], -1, 1, 2)
-        return (rope[..., 0] * q_or_k[..., 0] + rope[..., 1] * q_or_k[..., 1]).astype(
-            in_dtype
+        return (
+            (rope[..., 0] * q_or_k[..., 0] + rope[..., 1] * q_or_k[..., 1])
+            .astype(in_dtype)
+            .flatten(-2)
         )
 
 
