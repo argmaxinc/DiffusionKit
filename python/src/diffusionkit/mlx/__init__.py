@@ -254,7 +254,7 @@ class DiffusionPipeline:
             x_T = SD3LatentFormat().process_in(x_T)
         noise = self.get_noise(seed, x_T)
         sigmas = self.get_sigmas(self.sampler, num_steps)
-        sigmas = sigmas[int(num_steps * (1 - denoise)) :]
+        sigmas = sigmas[int(num_steps * (1 - denoise)):]
         extra_args = {
             "conditioning": conditioning,
             "cfg_weight": cfg_weight,
@@ -317,6 +317,11 @@ class DiffusionPipeline:
             logger.info(
                 f"Pre text encoding active memory: {log['text_encoding']['pre']['active_memory']}GB"
             )
+
+        # FIXME(arda): Need the same for CLIP models (low memory mode will not succeed a second time otherwise)
+        if not hasattr(self, "t5"):
+            self.set_up_t5()
+
         conditioning, pooled_conditioning = self.encode_text(
             text, cfg_weight, negative_text
         )
@@ -361,11 +366,6 @@ class DiffusionPipeline:
             f"Pooled Conditioning dtype after casting: {pooled_conditioning.dtype}"
         )
 
-        # Generate img_ids and txt_ids if flux model is used
-        img_ids, txt_ids = None, None
-        if self.is_flux:
-            img_ids, txt_ids = self.generate_ids(latent_size=latent_size)
-
         # Reset peak memory info
         mx.metal.reset_peak_memory()
 
@@ -388,7 +388,6 @@ class DiffusionPipeline:
                 f"Pre denoise active memory: {log['denoising']['pre']['active_memory']}GB"
             )
 
-        # TODO(arda): Implement denoising for FLUX model, wire up img_ids and txt_ids
         latents, iter_time = self.denoise_latents(
             conditioning,
             pooled_conditioning,
@@ -493,16 +492,6 @@ class DiffusionPipeline:
 
         return Image.fromarray(np.array(x)), log
 
-    def generate_ids(self, latent_size: Tuple[int]):
-        h, w = latent_size
-        img_ids = mx.zeros((h // 2, w // 2, 3))
-        img_ids[..., 1] = img_ids[..., 1] + mx.arange(h // 2)[:, None]
-        img_ids[..., 2] = img_ids[..., 2] + mx.arange(w // 2)[None, :]
-        img_ids = img_ids.reshape(1, -1, 3)
-
-        txt_ids = mx.zeros((1, 256, 3))  # Hardcoded to context length of T5
-        return img_ids, txt_ids
-
     def read_image(self, image_path: str):
         # Read the image
         img = Image.open(image_path)
@@ -568,6 +557,10 @@ class CFGDenoiser(nn.Module):
         super().__init__()
         self.model = model
 
+    def cache_modulation_params(self, pooled_text_embeddings, sigmas):
+        self.model.mmdit.cached_modulation_params = self.model.mmdit.cache_modulation_params(
+            pooled_text_embeddings, sigmas)
+
     def __call__(
         self, x_t, t, conditioning, cfg_weight: float = 7.5, pooled_conditioning=None
     ):
@@ -585,11 +578,12 @@ class CFGDenoiser(nn.Module):
         mmdit_input = {
             "latent_image_embeddings": x_t_mmdit,
             "token_level_text_embeddings": mx.expand_dims(conditioning, 2),
-            "pooled_text_embeddings": mx.expand_dims(
-                mx.expand_dims(pooled_conditioning, 1), 1
-            ),
+            "pooled_text_embeddings": mx.expand_dims(mx.expand_dims(pooled_conditioning, 1), 1),
             "timestep": timestep,
         }
+        if hasattr(self.model.mmdit, "cached_modulation_params"):
+            mmdit_input["cached_modulation_params"] = self.model.mmdit.cached_modulation_params[timestep]
+
         mmdit_output = self.model.mmdit(**mmdit_input)
         eps_pred = self.model.sampler.calculate_denoised(
             t_mmdit, mmdit_output, x_t_mmdit
