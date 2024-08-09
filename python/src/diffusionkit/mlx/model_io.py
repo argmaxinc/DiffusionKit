@@ -248,9 +248,6 @@ def flux_state_dict_adjustments(state_dict, prefix="", hidden_size=3072, mlp_rat
         for k, v in state_dict.items()
     }
 
-    # Remove k_proj bias
-    state_dict = {k: v for k, v in state_dict.items() if "k_proj.bias" not in k}
-
     state_dict["x_embedder.proj.weight"] = mx.expand_dims(
         mx.expand_dims(state_dict["x_embedder.proj.weight"], axis=1), axis=1
     )
