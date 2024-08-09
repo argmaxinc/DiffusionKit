@@ -6,7 +6,6 @@
 #
 
 import json
-from functools import partial
 from typing import Optional
 
 import mlx.core as mx
@@ -856,7 +855,7 @@ def load_tokenizer(
 
     merges_file = hf_hub_download(key, _MODELS[key][merges_key])
     with open(merges_file, encoding="utf-8") as f:
-        bpe_merges = f.read().strip().split("\n")[1 : 49152 - 256 - 2 + 1]
+        bpe_merges = f.read().strip().split("\n")[1: 49152 - 256 - 2 + 1]
     bpe_merges = [tuple(m.split()) for m in bpe_merges]
     bpe_ranks = dict(map(reversed, enumerate(bpe_merges)))
 

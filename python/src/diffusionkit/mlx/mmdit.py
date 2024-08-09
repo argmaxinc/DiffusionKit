@@ -10,6 +10,7 @@ import mlx.nn as nn
 import numpy as np
 from argmaxtools.utils import get_logger
 from beartype.typing import Dict, List, Optional, Tuple
+from collections import defaultdict
 
 from .config import MMDiTConfig, PositionalEncoding
 
@@ -67,21 +68,59 @@ class MMDiT(nn.Module):
 
         self.final_layer = FinalLayer(config)
 
+    def cache_modulation_params(self,
+                                pooled_text_embeddings: mx.array,
+                                timesteps: mx.array,
+                                ):
+        modulation_inputs = self.y_embedder(pooled_text_embeddings) + self.t_embedder(timesteps)
+
+        layerwise_precomputed_modulation_params = defaultdict(list)
+
+        for timestep in timesteps:
+            for block in self.multimodal_transformer_blocks:
+                layerwise_precomputed_modulation_params[timestep].extend([
+                    block.image_transformer_block.adaLN_modulation(modulation_inputs),
+                    block.text_transformer_block.adaLN_modulation(modulation_inputs),
+                ])
+
+            for block in self.unified_transformer_blocks:
+                layerwise_precomputed_modulation_params[timestep].extend([
+                    block.transformer_block.adaLN_modulation(modulation_inputs),
+                ])
+
+            layerwise_precomputed_modulation_params[timestep].append(
+                self.final_layer.adaLN_modulation(modulation_inputs)
+            )
+
+        return layerwise_precomputed_modulation_params
+
     def __call__(
         self,
         latent_image_embeddings: mx.array,
         token_level_text_embeddings: mx.array,
         pooled_text_embeddings: mx.array,
         timestep: mx.array,
+        layerwise_precomputed_modulation_params: Optional[List[mx.array]] = None,
     ) -> mx.array:
         t = latent_image_embeddings.dtype
 
         batch, latent_height, latent_width, _ = latent_image_embeddings.shape
 
         # Prepare input embeddings
-        modulation_inputs = self.y_embedder(pooled_text_embeddings) + self.t_embedder(
-            timestep
-        )
+        cached_modulation = layerwise_precomputed_modulation_params is not None
+        if not cached_modulation:
+            modulation_inputs = self.y_embedder(pooled_text_embeddings) + self.t_embedder(
+                timestep
+            )
+        else:
+            expected_cache_len = self.config.depth_multimodal * 2 + self.config.depth_unified + 1
+            if len(layerwise_precomputed_modulation_params) != expected_cache_len:
+                raise ValueError(
+                    f"Expected {expected_cache_len} precomputed modulation params, "
+                    f"got {len(layerwise_precomputed_modulation_params)}"
+                )
+            logger.debug("Using precomputed modulation params")
+
         token_level_text_embeddings = self.context_embedder(token_level_text_embeddings)
 
         if hasattr(self, "x_pos_embedder"):
@@ -109,6 +148,10 @@ class MMDiT(nn.Module):
         # MultiModalTransformer layers
         if self.config.depth_multimodal > 0:
             for bidx, block in enumerate(self.multimodal_transformer_blocks):
+
+                if cached_modulation:
+                    modulation_inputs = layerwise_precomputed_modulation_params[bidx*2:(bidx+1)*2]
+
                 # Upcast activations to float32 for layers that were diagnosed
                 # to be problematic in lower precision
                 if bidx in (self.config.upcast_multimodal_blocks or []):
@@ -118,15 +161,19 @@ class MMDiT(nn.Module):
                             f"Upcasting activations at multimodal_block {bidx} to float32"
                         )
                     latent_image_embeddings = latent_image_embeddings.astype(mx.float32)
-                    token_level_text_embeddings = token_level_text_embeddings.astype(
-                        mx.float32
-                    )
-                    modulation_inputs = modulation_inputs.astype(mx.float32)
+                    token_level_text_embeddings = token_level_text_embeddings.astype(mx.float32)
+
+                    if isinstance(modulation_inputs, list):
+                        modulation_inputs = [m.astype(mx.float32) for m in modulation_inputs]
+                    else:
+                        modulation_inputs= modulation_inputs.astype(mx.float32)
+
                 latent_image_embeddings, token_level_text_embeddings = block(
                     latent_image_embeddings,
                     token_level_text_embeddings,
                     modulation_inputs,
                     positional_encodings=positional_encodings,
+                    cached_modulation=cached_modulation,
                 )
                 mx.eval(latent_image_embeddings)
                 mx.eval(token_level_text_embeddings)
@@ -159,6 +206,11 @@ class MMDiT(nn.Module):
             )
 
             for bidx, block in enumerate(self.unified_transformer_blocks):
+
+                if cached_modulation:
+                    modulation_inputs = layerwise_precomputed_modulation_params[
+                        self.config.depth_multimodal * 2 + bidx]
+
                 if bidx in (self.config.upcast_unified_blocks or []):
                     if t != mx.float32:
                         logger.debug(
@@ -175,6 +227,7 @@ class MMDiT(nn.Module):
                     latent_unified_embeddings,
                     modulation_inputs,
                     positional_encodings=positional_encodings,
+                    cached_modulation=cached_modulation,
                 )
                 if bidx in (self.config.upcast_unified_blocks or []):
                     logger.debug(
@@ -185,12 +238,16 @@ class MMDiT(nn.Module):
                     positional_encodings = positional_encodings.astype(t)
 
             latent_image_embeddings = latent_unified_embeddings[
-                :, token_level_text_embeddings.shape[1] :, ...
+                :, token_level_text_embeddings.shape[1]:, ...
             ]
 
         # Final layer
+        if cached_modulation:
+            modulation_inputs = layerwise_precomputed_modulation_params[-1]
         latent_image_embeddings = self.final_layer(
-            latent_image_embeddings, modulation_inputs
+            latent_image_embeddings,
+            modulation_inputs,
+            cached_modulation=cached_modulation,
         )
         if self.config.patchify_via_reshape:
             latent_image_embeddings = self.x_embedder.unpack(
@@ -379,9 +436,14 @@ class TransformerBlock(nn.Module):
         self,
         tensor: mx.array,
         modulation_inputs: mx.array,
+        cached_modulation: bool = False,
     ) -> Dict[str, mx.array]:
-        # Project Adaptive LayerNorm modulation parameters
-        modulation_params = self.adaLN_modulation(modulation_inputs)
+        if cached_modulation:
+            modulation_params = modulation_inputs
+        else:
+            # Project Adaptive LayerNorm modulation parameters
+            modulation_params = self.adaLN_modulation(modulation_inputs)
+
         modulation_params = mx.split(
             modulation_params, self.num_modulation_params, axis=-1
         )
@@ -505,14 +567,19 @@ class MultiModalTransformerBlock(nn.Module):
         token_level_text_embeddings: mx.array,  # token-level text embeddings
         modulation_inputs: mx.array,  # pooled text embeddings + timestep embeddings
         positional_encodings: mx.array = None,  # positional encodings for rope
+        cached_modulation: bool = False,
     ):
         # Prepare multi-modal SDPA inputs
         image_intermediates = self.image_transformer_block.pre_sdpa(
-            latent_image_embeddings, modulation_inputs=modulation_inputs
+            latent_image_embeddings,
+            modulation_inputs=modulation_inputs,
+            cached_modulation=cached_modulation,
         )
 
         text_intermediates = self.text_transformer_block.pre_sdpa(
-            token_level_text_embeddings, modulation_inputs=modulation_inputs
+            token_level_text_embeddings,
+            modulation_inputs=modulation_inputs,
+            cached_modulation=cached_modulation,
         )
 
         batch = latent_image_embeddings.shape[0]
@@ -627,10 +694,13 @@ class UnifiedTransformerBlock(nn.Module):
         latent_unified_embeddings: mx.array,  # latent image embeddings
         modulation_inputs: mx.array,  # pooled text embeddings + timestep embeddings
         positional_encodings: mx.array = None,  # positional encodings for rope
+        cached_modulation: bool = False,
     ):
         # Prepare multi-modal SDPA inputs
         intermediates = self.transformer_block.pre_sdpa(
-            latent_unified_embeddings, modulation_inputs=modulation_inputs
+            latent_unified_embeddings,
+            modulation_inputs=modulation_inputs,
+            cached_modulation=cached_modulation,
         )
 
         batch = latent_unified_embeddings.shape[0]
@@ -707,13 +777,16 @@ class FinalLayer(nn.Module):
             nn.Linear(config.hidden_size, 2 * config.hidden_size),
         )
 
-    def __call__(
-        self, latent_image_embeddings: mx.array, modulation_inputs: mx.array
-    ) -> mx.array:
-        shift, residual_scale = mx.split(
-            self.adaLN_modulation(modulation_inputs), 2, axis=-1
-        )
+    def __call__(self,
+                 latent_image_embeddings: mx.array,
+                 modulation_inputs: mx.array,
+                 cached_modulation: bool = False,) -> mx.array:
+        if cached_modulation:
+            modulation_params = modulation_inputs
+        else:
+            modulation_params = self.adaLN_modulation(modulation_inputs)
 
+        shift, residual_scale = mx.split(modulation_params, 2, axis=-1)
         latent_image_embeddings = affine_transform(
             self.norm_final(latent_image_embeddings),
             shift=shift,
