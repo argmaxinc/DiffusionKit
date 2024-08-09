@@ -82,9 +82,12 @@ class MMDiT(nn.Module):
         )
         token_level_text_embeddings = self.context_embedder(token_level_text_embeddings)
 
-        latent_image_embeddings = self.x_embedder(latent_image_embeddings)
         if hasattr(self, "x_pos_embedder"):
-            latent_image_embeddings += self.x_pos_embedder(latent_image_embeddings)
+            latent_image_embeddings = self.x_embedder(
+                latent_image_embeddings
+            ) + self.x_pos_embedder(latent_image_embeddings)
+        else:
+            latent_image_embeddings = self.x_embedder(latent_image_embeddings)
 
         latent_image_embeddings = latent_image_embeddings.reshape(
             batch, -1, 1, self.config.hidden_size
