@@ -35,7 +35,7 @@ logger = get_logger(__name__)
 MMDIT_CKPT = {
     "2b": "mmdit_2b",
     "8b": "models/sd3_8b_beta.safetensors",
-    "flux": "argmaxinc/flux",
+    "flux": "argmaxinc/mlx-FLUX.1-schnell",
 }
 
 # FIXME(arda): DEBUG, delete after testing

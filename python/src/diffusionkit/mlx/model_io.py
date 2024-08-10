@@ -38,7 +38,7 @@ _MMDIT = {
         "mmdit_2b": "sd3_medium.safetensors",
         "vae": "sd3_medium.safetensors",
     },
-    "argmaxinc/flux": {
+    "argmaxinc/mlx-FLUX.1-schnell": {
         "flux": "flux-schnell.safetensors",
         "vae": "ae.safetensors",
     },
@@ -63,7 +63,7 @@ _PREFIX = {
         "vae_encoder": "first_stage_model.encoder.",
         "vae_decoder": "first_stage_model.decoder.",
     },
-    "argmaxinc/flux": {
+    "argmaxinc/mlx-FLUX.1-schnell": {
         "vae_encoder": "encoder.",
         "vae_decoder": "decoder.",
     },
@@ -670,7 +670,7 @@ def load_mmdit(
 
 
 def load_flux(
-    key: str = "argmaxinc/flux",
+    key: str = "argmaxinc/mlx-FLUX.1-schnell",
     float16: bool = False,
     model_key: str = "flux",
 ):

@@ -35,7 +35,7 @@ def cli():
     )
     parser.add_argument(
         "--model-size",
-        choices=("2b", "8b"),
+        choices=("2b", "8b", "flux"),
         default="2b",
         help="Stable Diffusion 3 model size (2b or 8b).",
     )
@@ -106,6 +106,10 @@ def cli():
     )
     args = parser.parse_args()
 
+    if args.model_size == "flux":
+        logger.warning("Disabling CFG for flux-schnell model.")
+        args.cfg = 0.0
+
     if args.benchmark_mode:
         if args.low_memory_mode:
             logger.warning("Benchmark mode is enabled, disabling low memory mode.")
@@ -125,6 +129,7 @@ def cli():
         low_memory_mode=args.low_memory_mode,
         a16=args.a16,
         local_ckpt=args.local_ckpt,
+        is_flux=args.model_size == "flux",
     )
 
     # Ensure that models are read in memory if needed
