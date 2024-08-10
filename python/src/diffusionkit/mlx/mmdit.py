@@ -412,13 +412,18 @@ class TransformerBlock(nn.Module):
                 batch, -1, self.config.num_heads, self.per_head_dim
             ).transpose(0, 2, 1, 3)
 
+        q = rearrange_for_norm(q)
+        k = rearrange_for_norm(k)
+        v = rearrange_for_norm(v)
+
         if self.config.use_qk_norm:
-            # FIXME: This is a temporary workaround to avoid a bug in the current implementation
-            q = rearrange_for_norm(q)
-            k = rearrange_for_norm(k)
             q, k = self.qk_norm(q, k)
+
+        # FIXME(arda): if not flux
+        if self.config.depth_unified == 0:
             q = q.transpose(0, 2, 1, 3).reshape(batch, -1, 1, self.config.hidden_size)
             k = k.transpose(0, 2, 1, 3).reshape(batch, -1, 1, self.config.hidden_size)
+            v = v.transpose(0, 2, 1, 3).reshape(batch, -1, 1, self.config.hidden_size)
 
         results = {"q": q, "k": k, "v": v}
 
@@ -515,24 +520,39 @@ class MultiModalTransformerBlock(nn.Module):
                 batch, -1, self.config.num_heads, self.per_head_dim
             ).transpose(0, 2, 1, 3)
 
-        multimodal_sdpa_inputs = {
-            "q": rearrange_for_sdpa(
-                mx.concatenate(
-                    [image_intermediates["q"], text_intermediates["q"]], axis=1
-                )
-            ),
-            "k": rearrange_for_sdpa(
-                mx.concatenate(
-                    [image_intermediates["k"], text_intermediates["k"]], axis=1
-                )
-            ),
-            "v": rearrange_for_sdpa(
-                mx.concatenate(
-                    [image_intermediates["v"], text_intermediates["v"]], axis=1
-                )
-            ),
-            "scale": 1.0 / np.sqrt(self.per_head_dim),
-        }
+        # FIXME(arda): if flux
+        if self.config.depth_unified > 0:
+            multimodal_sdpa_inputs = {
+                "q": mx.concatenate(
+                    [text_intermediates["q"], image_intermediates["q"]], axis=2
+                ),
+                "k": mx.concatenate(
+                    [text_intermediates["k"], image_intermediates["k"]], axis=2
+                ),
+                "v": mx.concatenate(
+                    [text_intermediates["v"], image_intermediates["v"]], axis=2
+                ),
+                "scale": 1.0 / np.sqrt(self.per_head_dim),
+            }
+        else:
+            multimodal_sdpa_inputs = {
+                "q": rearrange_for_sdpa(
+                    mx.concatenate(
+                        [image_intermediates["q"], text_intermediates["q"]], axis=1
+                    )
+                ),
+                "k": rearrange_for_sdpa(
+                    mx.concatenate(
+                        [image_intermediates["k"], text_intermediates["k"]], axis=1
+                    )
+                ),
+                "v": rearrange_for_sdpa(
+                    mx.concatenate(
+                        [image_intermediates["v"], text_intermediates["v"]], axis=1
+                    )
+                ),
+                "scale": 1.0 / np.sqrt(self.per_head_dim),
+            }
 
         if self.config.pos_embed_type == PositionalEncoding.PreSDPARope:
             assert positional_encodings is not None
