@@ -636,7 +636,7 @@ https://github.com/ml-explore/mlx-examples/blob/main/stable_diffusion/stable_dif
 
 
 def _load_safetensor_weights(mapper, model, weight_file, float16: bool = False):
-    dtype = mx.float16 if float16 else mx.float32
+    dtype = mx.bfloat16 if float16 else mx.float32
     weights = mx.load(weight_file)
     weights = _flatten([mapper(k, v.astype(dtype)) for k, v in weights.items()])
     model.update(tree_unflatten(weights))
@@ -655,7 +655,7 @@ def load_mmdit(
     model_key: str = "mmdit_2b",
 ):
     """Load the MM-DiT model from the checkpoint file."""
-    dtype = mx.float16 if float16 else mx.float32
+    dtype = mx.bfloat16 if float16 else mx.float32
     config = SD3_2b  # FIXME
     model = MMDiT(config)
 
@@ -776,7 +776,7 @@ def load_vae_decoder(
         resnet_groups=config.resnet_groups,
     )
 
-    dtype = mx.float16 if float16 else mx.float32
+    dtype = mx.bfloat16 if float16 else mx.float32
     vae_weights = _MMDIT[key][model_key]
     vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
     weights = mx.load(vae_weights_ckpt)
@@ -804,7 +804,7 @@ def load_vae_encoder(
         resnet_groups=config.resnet_groups,
     )
 
-    dtype = mx.float16 if float16 else mx.float32
+    dtype = mx.bfloat16 if float16 else mx.float32
     vae_weights = _MMDIT[key][model_key]
     vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
     weights = mx.load(vae_weights_ckpt)
@@ -826,7 +826,7 @@ def load_t5_encoder(
     config = T5Config.from_pretrained("google/t5-v1_1-xxl")
     model = SD3T5Encoder(config, low_memory_mode=low_memory_mode)
 
-    dtype = mx.float16 if float16 else mx.float32
+    dtype = mx.bfloat16 if float16 else mx.float32
     t5_weights = _MODELS[key][model_key]
     weights = mx.load(hf_hub_download(key, t5_weights))
     weights = t5_encoder_state_dict_adjustments(weights, prefix="")

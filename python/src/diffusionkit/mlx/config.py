@@ -6,7 +6,7 @@
 #
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Tuple, List
+from typing import List, Optional, Tuple
 
 import mlx.core as mx
 
@@ -63,19 +63,12 @@ class MMDiTConfig:
     frequency_embed_dim: int = 256
     max_period: int = 10000
 
-    dtype: mx.Dtype = mx.float16
+    dtype: mx.Dtype = mx.bfloat16
 
 
-SD3_8b = MMDiTConfig(
-    depth_multimodal=38,
-    num_heads=3,
-    upcast_multimodal_blocks=[35]
-)
+SD3_8b = MMDiTConfig(depth_multimodal=38, num_heads=3, upcast_multimodal_blocks=[35])
 
-SD3_2b = MMDiTConfig(
-    depth_multimodal=24,
-    num_heads=24
-)
+SD3_2b = MMDiTConfig(depth_multimodal=24, num_heads=24)
 
 FLUX_SCHNELL = MMDiTConfig(
     num_heads=24,

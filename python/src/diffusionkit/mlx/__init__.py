@@ -56,8 +56,8 @@ class DiffusionPipeline:
         is_flux: bool = False,
     ):
         model_io.LOCAl_SD3_CKPT = local_ckpt
-        self.dtype = mx.float16 if w16 else mx.float32
-        self.activation_dtype = mx.float16 if a16 else mx.float32
+        self.dtype = mx.bfloat16 if w16 else mx.float32
+        self.activation_dtype = mx.bfloat16 if a16 else mx.float32
         self.use_t5 = use_t5
         mmdit_ckpt = MMDIT_CKPT[model_size]
         self.low_memory_mode = low_memory_mode
@@ -105,7 +105,7 @@ class DiffusionPipeline:
     def set_up_t5(self):
         if self.t5_encoder is None:
             self.t5_encoder = load_t5_encoder(
-                float16=True if self.dtype == mx.float16 else False,
+                float16=True if self.dtype == mx.bfloat16 else False,
                 low_memory_mode=self.low_memory_mode,
             )
         if self.t5_tokenizer is None:
@@ -460,7 +460,7 @@ class DiffusionPipeline:
             logger.info(
                 f"Pre decode active memory: {log['decoding']['pre']['active_memory']}GB"
             )
-
+        latents = latents.astype(mx.float32)  # FIXME
         decoded = self.decode_latents_to_image(latents)
         mx.eval(decoded)
 
