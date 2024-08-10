@@ -333,11 +333,12 @@ class TransformerBlock(nn.Module):
         self,
         config: MMDiTConfig,
         skip_post_sdpa: bool = False,
+        parallel_mlp: bool = False,
         num_modulation_params: Optional[int] = None,
     ):
         super().__init__()
         self.config = config
-        self.parallel_mlp = config.parallel_mlp_for_unified_blocks
+        self.parallel_mlp = parallel_mlp
         self.skip_post_sdpa = skip_post_sdpa
         self.per_head_dim = config.hidden_size // config.num_heads
 
@@ -468,6 +469,7 @@ class TransformerBlock(nn.Module):
             mlp_out = self.mlp(modulated_pre_attention)
             return residual + post_attn_scale * (attention_out + mlp_out)
         else:
+            residual = residual + attention_out * post_attn_scale
             # Apply separate modulation parameters and LayerNorm across attn and mlp
             mlp_out = self.mlp(
                 affine_transform(
@@ -476,7 +478,7 @@ class TransformerBlock(nn.Module):
                     residual_scale=post_norm2_residual_scale,
                 )
             )
-            return residual + attention_out * post_attn_scale + post_mlp_scale * mlp_out
+            return residual + post_mlp_scale * mlp_out
 
     def __call__(self):
         raise NotImplementedError("This module is not intended to be used directly")
@@ -574,8 +576,13 @@ class MultiModalTransformerBlock(nn.Module):
         img_seq_len = latent_image_embeddings.shape[1]
         txt_seq_len = token_level_text_embeddings.shape[1]
 
-        image_sdpa_output = sdpa_outputs[:, :img_seq_len, :, :]
-        text_sdpa_output = sdpa_outputs[:, -txt_seq_len:, :, :]
+        # FIXME(arda): if flux
+        if self.config.depth_unified > 0:
+            text_sdpa_output = sdpa_outputs[:, :txt_seq_len, :, :]
+            image_sdpa_output = sdpa_outputs[:, txt_seq_len:, :, :]
+        else:
+            image_sdpa_output = sdpa_outputs[:, :img_seq_len, :, :]
+            text_sdpa_output = sdpa_outputs[:, -txt_seq_len:, :, :]
 
         # Post-SDPA layers
         latent_image_embeddings = self.image_transformer_block.post_sdpa(
@@ -602,6 +609,7 @@ class UnifiedTransformerBlock(nn.Module):
         self.transformer_block = TransformerBlock(
             config,
             num_modulation_params=3 if config.parallel_mlp_for_unified_blocks else 6,
+            parallel_mlp=config.parallel_mlp_for_unified_blocks,
         )
 
         sdpa_impl = mx.fast.scaled_dot_product_attention
