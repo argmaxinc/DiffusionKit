@@ -58,6 +58,17 @@ _MODELS = {
     },
 }
 
+_PREFIX = {
+    "stabilityai/stable-diffusion-3-medium": {
+        "vae_encoder": "first_stage_model.encoder.",
+        "vae_decoder": "first_stage_model.decoder.",
+    },
+    "argmaxinc/flux": {
+        "vae_encoder": "encoder.",
+        "vae_decoder": "decoder.",
+    },
+}
+
 DEPTH = {
     "2b": 24,
     "8b": 38,
@@ -770,7 +781,7 @@ def load_vae_decoder(
     vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
     weights = mx.load(vae_weights_ckpt)
     weights = vae_decoder_state_dict_adjustments(
-        weights, prefix="first_stage_model.decoder."
+        weights, prefix=_PREFIX[key]["vae_decoder"]
     )
     weights = {k: v.astype(dtype) for k, v in weights.items()}
     model.update(tree_unflatten(tree_flatten(weights)))
@@ -798,7 +809,7 @@ def load_vae_encoder(
     vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
     weights = mx.load(vae_weights_ckpt)
     weights = vae_encoder_state_dict_adjustments(
-        weights, prefix="first_stage_model.encoder."
+        weights, prefix=_PREFIX[key]["vae_encoder"]
     )
     weights = {k: v.astype(dtype) for k, v in weights.items()}
     model.update(tree_unflatten(tree_flatten(weights)))

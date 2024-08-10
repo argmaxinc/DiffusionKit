@@ -35,7 +35,7 @@ logger = get_logger(__name__)
 MMDIT_CKPT = {
     "2b": "mmdit_2b",
     "8b": "models/sd3_8b_beta.safetensors",
-    "flux": "flux",
+    "flux": "argmaxinc/flux",
 }
 
 # FIXME(arda): DEBUG, delete after testing
@@ -67,8 +67,8 @@ class DiffusionPipeline:
         else:
             self.mmdit = load_mmdit(float16=w16, model_key=mmdit_ckpt)
         self.sampler = ModelSamplingDiscreteFlow(shift=shift)
-        self.decoder = load_vae_decoder(float16=w16)
-        self.encoder = load_vae_encoder(float16=False)
+        self.decoder = load_vae_decoder(float16=w16, key=mmdit_ckpt)
+        self.encoder = load_vae_encoder(float16=False, key=mmdit_ckpt)
 
         if is_flux and not use_t5:
             logger.info("FLUX model is being used without T5. Setting use_t5 to True.")
@@ -251,7 +251,11 @@ class DiffusionPipeline:
             denoise = 1.0
         else:
             x_T = self.encode_image_to_latents(image_path, seed=seed)
-            x_T = SD3LatentFormat().process_in(x_T)
+            # FIXME(arda): Fast hack to get the model working
+            if self.is_flux:
+                x_T = FluxLatentFormat().process_in(x_T)
+            else:
+                x_T = SD3LatentFormat().process_in(x_T)
         noise = self.get_noise(seed, x_T)
         sigmas = self.get_sigmas(self.sampler, num_steps)
         sigmas = sigmas[int(num_steps * (1 - denoise)) :]
@@ -266,7 +270,11 @@ class DiffusionPipeline:
         latent, iter_time = sample_euler(
             CFGDenoiser(self), noise_scaled, sigmas, extra_args=extra_args
         )
-        latent = SD3LatentFormat().process_out(latent)
+        # FIXME(arda): Fast hack to get the model working
+        if self.is_flux:
+            latent = FluxLatentFormat().process_out(latent)
+        else:
+            latent = SD3LatentFormat().process_out(latent)
         return latent, iter_time
 
     def generate_image(
@@ -590,6 +598,7 @@ class CFGDenoiser(nn.Module):
             ),
             "timestep": timestep,
         }
+        print("timestep", timestep)  # FIXME
         mmdit_output = self.model.mmdit(**mmdit_input)
         eps_pred = self.model.sampler.calculate_denoised(
             t_mmdit, mmdit_output, x_t_mmdit
@@ -648,11 +657,13 @@ def sample_euler(model: CFGDenoiser, x, sigmas, extra_args=None):
     s_in = mx.ones([x.shape[0]])
     from tqdm import trange
 
+    sigmas = mx.array([1.0, 0.75, 0.5, 0.25, 0.0])  # FIXME
     t = trange(len(sigmas) - 1)
     iter_time = []
     for i in t:
         start_time = t.format_dict["elapsed"]
         sigma_hat = sigmas[i]
+        print(sigma_hat)  # FIXME
         denoised = model(x, sigma_hat * s_in, **extra_args)
         d = to_d(x, sigma_hat, denoised)
         dt = sigmas[i + 1] - sigma_hat

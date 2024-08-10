@@ -638,16 +638,20 @@ class UnifiedTransformerBlock(nn.Module):
             ).transpose(0, 2, 1, 3)
 
         multimodal_sdpa_inputs = {
-            "q": rearrange_for_sdpa(intermediates["q"]),
-            "k": rearrange_for_sdpa(intermediates["k"]),
-            "v": rearrange_for_sdpa(intermediates["v"]),
+            "q": intermediates["q"],
+            "k": intermediates["k"],
+            "v": intermediates["v"],
             "scale": 1.0 / np.sqrt(self.per_head_dim),
         }
 
         if self.config.pos_embed_type == PositionalEncoding.PreSDPARope:
             assert positional_encodings is not None
-            RoPE.apply(multimodal_sdpa_inputs["q"], positional_encodings)
-            RoPE.apply(multimodal_sdpa_inputs["k"], positional_encodings)
+            multimodal_sdpa_inputs["q"] = RoPE.apply(
+                multimodal_sdpa_inputs["q"], positional_encodings
+            )
+            multimodal_sdpa_inputs["k"] = RoPE.apply(
+                multimodal_sdpa_inputs["k"], positional_encodings
+            )
 
         # Compute multi-modal SDPA
         sdpa_outputs = (
@@ -655,6 +659,9 @@ class UnifiedTransformerBlock(nn.Module):
             .transpose(0, 2, 1, 3)
             .reshape(batch, -1, 1, self.config.hidden_size)
         )
+
+        # FIXME(arda): update state dict later
+        self.transformer_block.mlp.fc2.bias = self.transformer_block.mlp.fc2.bias * 0.0
 
         # Post-SDPA layers
         latent_unified_embeddings = self.transformer_block.post_sdpa(
@@ -835,10 +842,9 @@ class RoPE(nn.Module):
                 latent_image_resolution, text_sequence_length
             )
             self.rope_embeddings = self.rope(positions, self.theta)
+            self.rope_embeddings = mx.expand_dims(self.rope_embeddings, axis=1)
         else:
             print("Returning cached RoPE embeddings")
-
-        self.rope_embeddings = mx.expand_dims(self.rope_embeddings, axis=1)
 
         return self.rope_embeddings
 
