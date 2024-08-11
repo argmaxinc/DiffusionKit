@@ -611,8 +611,10 @@ class CFGDenoiser(nn.Module):
         self.model = model
 
     def cache_modulation_params(self, pooled_text_embeddings, sigmas):
-        self.model.mmdit.cached_modulation_params = self.model.mmdit.cache_modulation_params(
-            pooled_text_embeddings, sigmas)
+        self.model.mmdit.cache_modulation_params(pooled_text_embeddings, sigmas)
+
+    def clear_cache(self):
+        self.model.mmdit.clear_modulation_params_cache()
 
     def __call__(
         self, x_t, t, conditioning, cfg_weight: float = 7.5, pooled_conditioning=None
@@ -691,7 +693,14 @@ def sample_euler(model: CFGDenoiser, x, sigmas, extra_args=None):
     s_in = mx.ones([x.shape[0]])
     from tqdm import trange
 
+<<<<<<< HEAD
+=======
+    sigmas = mx.array([1.0, 0.75, 0.5, 0.25, 0.0], mx.bfloat16)  # FIXME
+>>>>>>> bb6dcc2d (TODO: Test memory reduction and correctness)
     t = trange(len(sigmas) - 1)
+
+    model.cache_modulation_params(extra_args["pooled_conditioning"], sigmas)
+
     iter_time = []
     for i in t:
         start_time = t.format_dict["elapsed"]
@@ -704,4 +713,7 @@ def sample_euler(model: CFGDenoiser, x, sigmas, extra_args=None):
         mx.eval(x)
         end_time = t.format_dict["elapsed"]
         iter_time.append(round((end_time - start_time), 3))
+
+    model.clear_cache()
+
     return x, iter_time
