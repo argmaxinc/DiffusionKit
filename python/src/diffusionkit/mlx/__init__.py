@@ -28,18 +28,15 @@ from .model_io import (
     load_vae_decoder,
     load_vae_encoder,
 )
-from .sampler import ModelSamplingDiscreteFlow
+from .sampler import FluxSampler, ModelSamplingDiscreteFlow
 
 logger = get_logger(__name__)
 
 MMDIT_CKPT = {
-    "2b": "mmdit_2b",
+    "2b": "stabilityai/stable-diffusion-3-medium",
     "8b": "models/sd3_8b_beta.safetensors",
     "flux": "argmaxinc/mlx-FLUX.1-schnell",
 }
-
-# FIXME(arda): DEBUG, delete after testing
-IS_FLUX = False
 
 
 class DiffusionPipeline:
@@ -61,12 +58,16 @@ class DiffusionPipeline:
         self.use_t5 = use_t5
         mmdit_ckpt = MMDIT_CKPT[model_size]
         self.low_memory_mode = low_memory_mode
-        self.is_flux = IS_FLUX or is_flux
+        self.is_flux = is_flux
         if is_flux:
             self.mmdit = load_flux(float16=w16)
         else:
-            self.mmdit = load_mmdit(float16=w16, model_key=mmdit_ckpt)
-        self.sampler = ModelSamplingDiscreteFlow(shift=shift)
+            self.mmdit = load_mmdit(float16=w16, key=mmdit_ckpt, model_key=model_size)
+        self.sampler = (
+            FluxSampler(shift=shift)
+            if self.is_flux
+            else ModelSamplingDiscreteFlow(shift=shift)
+        )
         self.decoder = load_vae_decoder(float16=w16, key=mmdit_ckpt)
         self.encoder = load_vae_encoder(float16=False, key=mmdit_ckpt)
 
@@ -251,7 +252,6 @@ class DiffusionPipeline:
             denoise = 1.0
         else:
             x_T = self.encode_image_to_latents(image_path, seed=seed)
-            # FIXME(arda): Fast hack to get the model working
             if self.is_flux:
                 x_T = FluxLatentFormat().process_in(x_T)
             else:
@@ -537,12 +537,15 @@ class DiffusionPipeline:
     def get_sigmas(self, sampler, num_steps: int):
         start = sampler.timestep(sampler.sigma_max).item()
         end = sampler.timestep(sampler.sigma_min).item()
+        if isinstance(sampler, FluxSampler):
+            num_steps += 1
         timesteps = mx.linspace(start, end, num_steps)
         sigs = []
         for x in range(len(timesteps)):
             ts = timesteps[x]
             sigs.append(sampler.sigma(ts))
-        sigs += [0.0]
+        if not isinstance(sampler, FluxSampler):
+            sigs += [0.0]
         return mx.array(sigs)
 
     def get_empty_latent(self, *shape):
@@ -657,7 +660,6 @@ def sample_euler(model: CFGDenoiser, x, sigmas, extra_args=None):
     s_in = mx.ones([x.shape[0]])
     from tqdm import trange
 
-    sigmas = mx.array([1.0, 0.75, 0.5, 0.25, 0.0])  # FIXME
     t = trange(len(sigmas) - 1)
     iter_time = []
     for i in t:

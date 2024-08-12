@@ -35,7 +35,7 @@ RANK = 32
 _DEFAULT_MMDIT = "stabilityai/stable-diffusion-3-medium"
 _MMDIT = {
     "stabilityai/stable-diffusion-3-medium": {
-        "mmdit_2b": "sd3_medium.safetensors",
+        "2b": "sd3_medium.safetensors",
         "vae": "sd3_medium.safetensors",
     },
     "argmaxinc/mlx-FLUX.1-schnell": {
@@ -67,6 +67,11 @@ _PREFIX = {
         "vae_encoder": "encoder.",
         "vae_decoder": "decoder.",
     },
+}
+
+_FLOAT16 = {
+    "stabilityai/stable-diffusion-3-medium": mx.float16,
+    "argmaxinc/mlx-FLUX.1-schnell": mx.bfloat16,
 }
 
 DEPTH = {
