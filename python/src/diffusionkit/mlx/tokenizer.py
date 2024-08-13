@@ -19,7 +19,6 @@ class Tokenizer:
             regex.IGNORECASE,
         )
 
-        # FIXME(arda): Make these configurable
         self.pad_to_max_length = True
         self.max_length = 77
 
@@ -119,7 +118,6 @@ class T5Tokenizer:
             model_max_length=getattr(config, "n_positions", 512),
         )
 
-        # FIXME(arda): Make these configurable
         self.pad_to_max_length = True
         self.max_length = 77
         self.pad_with_eos = False

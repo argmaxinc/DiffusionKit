@@ -422,7 +422,6 @@ class TransformerBlock(nn.Module):
         if self.config.use_qk_norm:
             q, k = self.qk_norm(q, k)
 
-        # FIXME(arda): if not flux
         if self.config.depth_unified == 0:
             q = q.transpose(0, 2, 1, 3).reshape(batch, -1, 1, self.config.hidden_size)
             k = k.transpose(0, 2, 1, 3).reshape(batch, -1, 1, self.config.hidden_size)
@@ -524,7 +523,6 @@ class MultiModalTransformerBlock(nn.Module):
                 batch, -1, self.config.num_heads, self.per_head_dim
             ).transpose(0, 2, 1, 3)
 
-        # FIXME(arda): if flux
         if self.config.depth_unified > 0:
             multimodal_sdpa_inputs = {
                 "q": mx.concatenate(
@@ -583,7 +581,6 @@ class MultiModalTransformerBlock(nn.Module):
         img_seq_len = latent_image_embeddings.shape[1]
         txt_seq_len = token_level_text_embeddings.shape[1]
 
-        # FIXME(arda): if flux
         if self.config.depth_unified > 0:
             text_sdpa_output = sdpa_outputs[:, :txt_seq_len, :, :]
             image_sdpa_output = sdpa_outputs[:, txt_seq_len:, :, :]
@@ -672,7 +669,7 @@ class UnifiedTransformerBlock(nn.Module):
             .reshape(batch, -1, 1, self.config.hidden_size)
         )
 
-        # FIXME(arda): update state dict later
+        # o_proj and mlp.fc2 uses the same bias, remove mlp.fc2 bias
         self.transformer_block.mlp.fc2.bias = self.transformer_block.mlp.fc2.bias * 0.0
 
         # Post-SDPA layers

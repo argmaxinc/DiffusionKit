@@ -420,7 +420,7 @@ class DiffusionPipeline:
             logger.info(
                 f"Pre decode active memory: {log['decoding']['pre']['active_memory']}GB"
             )
-        latents = latents.astype(mx.float32)  # FIXME
+        latents = latents.astype(mx.float32)
         decoded = self.decode_latents_to_image(latents)
         mx.eval(decoded)
 
