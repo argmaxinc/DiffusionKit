@@ -15,6 +15,8 @@ from .config import MMDiTConfig, PositionalEncoding
 
 logger = get_logger(__name__)
 
+SDPA_FLASH_ATTN_THRESHOLD = 1000
+
 
 class MMDiT(nn.Module):
     """Multi-modal Diffusion Transformer Architecture
@@ -566,7 +568,9 @@ class MultiModalTransformerBlock(nn.Module):
             )
 
         if self.config.low_memory_mode:
-            multimodal_sdpa_inputs["memory_efficient_threshold"] = 2
+            multimodal_sdpa_inputs[
+                "memory_efficient_threshold"
+            ] = SDPA_FLASH_ATTN_THRESHOLD
 
         # Compute multi-modal SDPA
         sdpa_outputs = (
@@ -657,7 +661,9 @@ class UnifiedTransformerBlock(nn.Module):
             )
 
         if self.config.low_memory_mode:
-            multimodal_sdpa_inputs["memory_efficient_threshold"] = 2
+            multimodal_sdpa_inputs[
+                "memory_efficient_threshold"
+            ] = SDPA_FLASH_ATTN_THRESHOLD
 
         # Compute multi-modal SDPA
         sdpa_outputs = (
