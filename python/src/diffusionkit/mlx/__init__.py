@@ -53,8 +53,10 @@ class DiffusionPipeline:
         is_flux: bool = False,
     ):
         model_io.LOCAl_SD3_CKPT = local_ckpt
-        self.dtype = mx.bfloat16 if w16 else mx.float32
-        self.activation_dtype = mx.bfloat16 if a16 else mx.float32
+        self.float16_dtype = mx.bfloat16 if is_flux else mx.float16
+        model_io._FLOAT16 = self.float16_dtype
+        self.dtype = self.float16_dtype if w16 else mx.float32
+        self.activation_dtype = self.float16_dtype if a16 else mx.float32
         self.use_t5 = use_t5
         mmdit_ckpt = MMDIT_CKPT[model_size]
         self.low_memory_mode = low_memory_mode
@@ -106,7 +108,7 @@ class DiffusionPipeline:
     def set_up_t5(self):
         if self.t5_encoder is None:
             self.t5_encoder = load_t5_encoder(
-                float16=True if self.dtype == mx.bfloat16 else False,
+                float16=True if self.dtype == self.float16_dtype else False,
                 low_memory_mode=self.low_memory_mode,
             )
         if self.t5_tokenizer is None:
@@ -601,7 +603,7 @@ class CFGDenoiser(nn.Module):
             ),
             "timestep": timestep,
         }
-        print("timestep", timestep)  # FIXME
+
         mmdit_output = self.model.mmdit(**mmdit_input)
         eps_pred = self.model.sampler.calculate_denoised(
             t_mmdit, mmdit_output, x_t_mmdit
@@ -665,7 +667,6 @@ def sample_euler(model: CFGDenoiser, x, sigmas, extra_args=None):
     for i in t:
         start_time = t.format_dict["elapsed"]
         sigma_hat = sigmas[i]
-        print(sigma_hat)  # FIXME
         denoised = model(x, sigma_hat * s_in, **extra_args)
         d = to_d(x, sigma_hat, denoised)
         dt = sigmas[i + 1] - sigma_hat

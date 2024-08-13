@@ -69,10 +69,7 @@ _PREFIX = {
     },
 }
 
-_FLOAT16 = {
-    "stabilityai/stable-diffusion-3-medium": mx.float16,
-    "argmaxinc/mlx-FLUX.1-schnell": mx.bfloat16,
-}
+_FLOAT16 = mx.bfloat16
 
 DEPTH = {
     "2b": 24,
@@ -641,7 +638,7 @@ https://github.com/ml-explore/mlx-examples/blob/main/stable_diffusion/stable_dif
 
 
 def _load_safetensor_weights(mapper, model, weight_file, float16: bool = False):
-    dtype = mx.bfloat16 if float16 else mx.float32
+    dtype = _FLOAT16 if float16 else mx.float32
     weights = mx.load(weight_file)
     weights = _flatten([mapper(k, v.astype(dtype)) for k, v in weights.items()])
     model.update(tree_unflatten(weights))
@@ -660,8 +657,8 @@ def load_mmdit(
     model_key: str = "mmdit_2b",
 ):
     """Load the MM-DiT model from the checkpoint file."""
-    dtype = mx.bfloat16 if float16 else mx.float32
-    config = SD3_2b  # FIXME
+    dtype = _FLOAT16 if float16 else mx.float32
+    config = SD3_2b
     model = MMDiT(config)
 
     mmdit_weights = _MMDIT[key][model_key]
@@ -680,7 +677,7 @@ def load_flux(
     model_key: str = "flux",
 ):
     """Load the MM-DiT Flux model from the checkpoint file."""
-    dtype = mx.bfloat16 if float16 else mx.float32
+    dtype = _FLOAT16 if float16 else mx.float32
     config = FLUX_SCHNELL  # FIXME
     model = MMDiT(config)
 
@@ -781,7 +778,7 @@ def load_vae_decoder(
         resnet_groups=config.resnet_groups,
     )
 
-    dtype = mx.bfloat16 if float16 else mx.float32
+    dtype = _FLOAT16 if float16 else mx.float32
     vae_weights = _MMDIT[key][model_key]
     vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
     weights = mx.load(vae_weights_ckpt)
@@ -809,7 +806,7 @@ def load_vae_encoder(
         resnet_groups=config.resnet_groups,
     )
 
-    dtype = mx.bfloat16 if float16 else mx.float32
+    dtype = _FLOAT16 if float16 else mx.float32
     vae_weights = _MMDIT[key][model_key]
     vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
     weights = mx.load(vae_weights_ckpt)
@@ -831,7 +828,7 @@ def load_t5_encoder(
     config = T5Config.from_pretrained("google/t5-v1_1-xxl")
     model = SD3T5Encoder(config, low_memory_mode=low_memory_mode)
 
-    dtype = mx.bfloat16 if float16 else mx.float32
+    dtype = _FLOAT16 if float16 else mx.float32
     t5_weights = _MODELS[key][model_key]
     weights = mx.load(hf_hub_download(key, t5_weights))
     weights = t5_encoder_state_dict_adjustments(weights, prefix="")

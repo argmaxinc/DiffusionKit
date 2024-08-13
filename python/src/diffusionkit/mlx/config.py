@@ -64,11 +64,14 @@ class MMDiTConfig:
     max_period: int = 10000
 
     dtype: mx.Dtype = mx.bfloat16
+    float16_dtype: mx.Dtype = mx.bfloat16
 
 
 SD3_8b = MMDiTConfig(depth_multimodal=38, num_heads=3, upcast_multimodal_blocks=[35])
 
-SD3_2b = MMDiTConfig(depth_multimodal=24, num_heads=24)
+SD3_2b = MMDiTConfig(
+    depth_multimodal=24, num_heads=24, float16_dtype=mx.float16, dtype=mx.float16
+)
 
 FLUX_SCHNELL = MMDiTConfig(
     num_heads=24,
@@ -81,6 +84,8 @@ FLUX_SCHNELL = MMDiTConfig(
     rope_axes_dim=(16, 56, 56),
     pooled_text_embed_dim=768,  # CLIP-L/14 only
     use_qk_norm=True,
+    float16_dtype=mx.bfloat16,
+    dtype=mx.bfloat16,
 )
 
 

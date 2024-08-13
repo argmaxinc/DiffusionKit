@@ -83,7 +83,9 @@ class CLIPTextModel(nn.Module):
     def _get_mask(self, N, dtype):
         indices = mx.arange(N)
         mask = indices[:, None] < indices[None]
-        mask = mask.astype(dtype) * (-6e4 if dtype == mx.bfloat16 else -1e9)
+        mask = mask.astype(dtype) * (
+            -6e4 if (dtype == mx.bfloat16 or dtype == mx.float16) else -1e9
+        )
         return mask
 
     def __call__(self, x):
