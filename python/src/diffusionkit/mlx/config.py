@@ -66,6 +66,8 @@ class MMDiTConfig:
     dtype: mx.Dtype = mx.bfloat16
     float16_dtype: mx.Dtype = mx.bfloat16
 
+    low_memory_mode: bool = True
+
 
 SD3_8b = MMDiTConfig(depth_multimodal=38, num_heads=3, upcast_multimodal_blocks=[35])
 

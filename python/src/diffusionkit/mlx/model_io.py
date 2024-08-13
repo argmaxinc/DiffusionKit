@@ -654,10 +654,12 @@ def load_mmdit(
     key: str = _DEFAULT_MMDIT,
     float16: bool = False,
     model_key: str = "mmdit_2b",
+    low_memory_mode: bool = True,
 ):
     """Load the MM-DiT model from the checkpoint file."""
     dtype = _FLOAT16 if float16 else mx.float32
     config = SD3_2b
+    config.low_memory_mode = low_memory_mode
     model = MMDiT(config)
 
     mmdit_weights = _MMDIT[key][model_key]
@@ -674,10 +676,12 @@ def load_flux(
     key: str = "argmaxinc/mlx-FLUX.1-schnell",
     float16: bool = False,
     model_key: str = "flux",
+    low_memory_mode: bool = True,
 ):
     """Load the MM-DiT Flux model from the checkpoint file."""
     dtype = _FLOAT16 if float16 else mx.float32
-    config = FLUX_SCHNELL  # FIXME
+    config = FLUX_SCHNELL
+    config.low_memory_mode = low_memory_mode
     model = MMDiT(config)
 
     flux_weights = _MMDIT[key][model_key]

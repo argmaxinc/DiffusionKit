@@ -565,6 +565,9 @@ class MultiModalTransformerBlock(nn.Module):
                 multimodal_sdpa_inputs["k"], positional_encodings
             )
 
+        if self.config.low_memory_mode:
+            multimodal_sdpa_inputs["memory_efficient_threshold"] = 2
+
         # Compute multi-modal SDPA
         sdpa_outputs = (
             self.sdpa(**multimodal_sdpa_inputs)
@@ -652,6 +655,9 @@ class UnifiedTransformerBlock(nn.Module):
             multimodal_sdpa_inputs["k"] = RoPE.apply(
                 multimodal_sdpa_inputs["k"], positional_encodings
             )
+
+        if self.config.low_memory_mode:
+            multimodal_sdpa_inputs["memory_efficient_threshold"] = 2
 
         # Compute multi-modal SDPA
         sdpa_outputs = (

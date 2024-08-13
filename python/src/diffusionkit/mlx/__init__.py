@@ -59,7 +59,12 @@ class DiffusionPipeline:
         self.use_t5 = use_t5
         mmdit_ckpt = MMDIT_CKPT[model_size]
         self.low_memory_mode = low_memory_mode
-        self.mmdit = load_mmdit(float16=w16, key=mmdit_ckpt, model_key=model_size)
+        self.mmdit = load_mmdit(
+            float16=w16,
+            key=mmdit_ckpt,
+            model_key=model_size,
+            low_memory_mode=low_memory_mode,
+        )
         self.sampler = ModelSamplingDiscreteFlow(shift=shift)
         self.decoder = load_vae_decoder(float16=w16, key=mmdit_ckpt)
         self.encoder = load_vae_encoder(float16=False, key=mmdit_ckpt)
@@ -547,7 +552,7 @@ class FluxPipeline(DiffusionPipeline):
         self.use_t5 = use_t5
         mmdit_ckpt = MMDIT_CKPT[model_size]
         self.low_memory_mode = low_memory_mode
-        self.mmdit = load_flux(float16=w16)
+        self.mmdit = load_flux(float16=w16, low_memory_mode=low_memory_mode)
         self.sampler = FluxSampler(shift=shift)
         self.decoder = load_vae_decoder(float16=w16, key=mmdit_ckpt)
         self.encoder = load_vae_encoder(float16=False, key=mmdit_ckpt)
