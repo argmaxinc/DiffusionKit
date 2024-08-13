@@ -50,32 +50,20 @@ class DiffusionPipeline:
         low_memory_mode: bool = True,
         a16: bool = False,
         local_ckpt=None,
-        is_flux: bool = False,
     ):
         model_io.LOCAl_SD3_CKPT = local_ckpt
-        self.float16_dtype = mx.bfloat16 if is_flux else mx.float16
+        self.float16_dtype = mx.float16
         model_io._FLOAT16 = self.float16_dtype
         self.dtype = self.float16_dtype if w16 else mx.float32
         self.activation_dtype = self.float16_dtype if a16 else mx.float32
         self.use_t5 = use_t5
         mmdit_ckpt = MMDIT_CKPT[model_size]
         self.low_memory_mode = low_memory_mode
-        self.is_flux = is_flux
-        if is_flux:
-            self.mmdit = load_flux(float16=w16)
-        else:
-            self.mmdit = load_mmdit(float16=w16, key=mmdit_ckpt, model_key=model_size)
-        self.sampler = (
-            FluxSampler(shift=shift)
-            if self.is_flux
-            else ModelSamplingDiscreteFlow(shift=shift)
-        )
+        self.mmdit = load_mmdit(float16=w16, key=mmdit_ckpt, model_key=model_size)
+        self.sampler = ModelSamplingDiscreteFlow(shift=shift)
         self.decoder = load_vae_decoder(float16=w16, key=mmdit_ckpt)
         self.encoder = load_vae_encoder(float16=False, key=mmdit_ckpt)
-
-        if is_flux and not use_t5:
-            logger.info("FLUX model is being used without T5. Setting use_t5 to True.")
-            self.use_t5 = True
+        self.latent_format = SD3LatentFormat()
 
         self.clip_l = load_text_encoder(
             model,
@@ -88,18 +76,17 @@ class DiffusionPipeline:
             vocab_key="tokenizer_l_vocab",
             pad_with_eos=True,
         )
-        if not is_flux:
-            self.clip_g = load_text_encoder(
-                model,
-                w16,
-                model_key="clip_g",
-            )
-            self.tokenizer_g = load_tokenizer(
-                model,
-                merges_key="tokenizer_g_merges",
-                vocab_key="tokenizer_g_vocab",
-                pad_with_eos=False,
-            )
+        self.clip_g = load_text_encoder(
+            model,
+            w16,
+            model_key="clip_g",
+        )
+        self.tokenizer_g = load_tokenizer(
+            model,
+            merges_key="tokenizer_g_merges",
+            vocab_key="tokenizer_g_vocab",
+            pad_with_eos=False,
+        )
         self.t5_encoder = None
         self.t5_tokenizer = None
         if self.use_t5:
@@ -160,76 +147,53 @@ class DiffusionPipeline:
         cfg_weight: float = 7.5,
         negative_text: str = "",
     ):
-        # FIXME(arda): Fast hack to get the model working
-        if self.is_flux:
-            tokens_l = self._tokenize(
-                self.tokenizer_l,
-                text,
-                (negative_text if cfg_weight > 1 else None),
-            )
-            conditioning_l = self.clip_l(tokens_l[[0], :])  # Ignore negative text
-            pooled_conditioning = conditioning_l.pooled_output
+        tokens_l = self._tokenize(
+            self.tokenizer_l,
+            text,
+            (negative_text if cfg_weight > 1 else None),
+        )
+        tokens_g = self._tokenize(
+            self.tokenizer_g,
+            text,
+            (negative_text if cfg_weight > 1 else None),
+        )
 
+        conditioning_l = self.clip_l(tokens_l)
+        conditioning_g = self.clip_g(tokens_g)
+        conditioning = mx.concatenate(
+            [conditioning_l.hidden_states[-2], conditioning_g.hidden_states[-2]],
+            axis=-1,
+        )
+        pooled_conditioning = mx.concatenate(
+            [conditioning_l.pooled_output, conditioning_g.pooled_output],
+            axis=-1,
+        )
+
+        conditioning = mx.concatenate(
+            [
+                conditioning,
+                mx.zeros(
+                    (
+                        conditioning.shape[0],
+                        conditioning.shape[1],
+                        4096 - conditioning.shape[2],
+                    )
+                ),
+            ],
+            axis=-1,
+        )
+
+        if self.use_t5:
             tokens_t5 = self._tokenize(
                 self.t5_tokenizer,
                 text,
                 (negative_text if cfg_weight > 1 else None),
             )
-            padded_tokens_t5 = mx.zeros((1, 256)).astype(tokens_t5.dtype)
-            padded_tokens_t5[:, : tokens_t5.shape[1]] = tokens_t5[
-                [0], :
-            ]  # Ignore negative text
-            t5_conditioning = self.t5_encoder(padded_tokens_t5)
+            t5_conditioning = self.t5_encoder(tokens_t5)
             mx.eval(t5_conditioning)
-            conditioning = t5_conditioning
         else:
-            tokens_l = self._tokenize(
-                self.tokenizer_l,
-                text,
-                (negative_text if cfg_weight > 1 else None),
-            )
-            tokens_g = self._tokenize(
-                self.tokenizer_g,
-                text,
-                (negative_text if cfg_weight > 1 else None),
-            )
-
-            conditioning_l = self.clip_l(tokens_l)
-            conditioning_g = self.clip_g(tokens_g)
-            conditioning = mx.concatenate(
-                [conditioning_l.hidden_states[-2], conditioning_g.hidden_states[-2]],
-                axis=-1,
-            )
-            pooled_conditioning = mx.concatenate(
-                [conditioning_l.pooled_output, conditioning_g.pooled_output],
-                axis=-1,
-            )
-
-            conditioning = mx.concatenate(
-                [
-                    conditioning,
-                    mx.zeros(
-                        (
-                            conditioning.shape[0],
-                            conditioning.shape[1],
-                            4096 - conditioning.shape[2],
-                        )
-                    ),
-                ],
-                axis=-1,
-            )
-
-            if self.use_t5:
-                tokens_t5 = self._tokenize(
-                    self.t5_tokenizer,
-                    text,
-                    (negative_text if cfg_weight > 1 else None),
-                )
-                t5_conditioning = self.t5_encoder(tokens_t5)
-                mx.eval(t5_conditioning)
-            else:
-                t5_conditioning = mx.zeros_like(conditioning)
-            conditioning = mx.concatenate([conditioning, t5_conditioning], axis=1)
+            t5_conditioning = mx.zeros_like(conditioning)
+        conditioning = mx.concatenate([conditioning, t5_conditioning], axis=1)
 
         return conditioning, pooled_conditioning
 
@@ -254,10 +218,7 @@ class DiffusionPipeline:
             denoise = 1.0
         else:
             x_T = self.encode_image_to_latents(image_path, seed=seed)
-            if self.is_flux:
-                x_T = FluxLatentFormat().process_in(x_T)
-            else:
-                x_T = SD3LatentFormat().process_in(x_T)
+            x_T = self.latent_format.process_in(x_T)
         noise = self.get_noise(seed, x_T)
         sigmas = self.get_sigmas(self.sampler, num_steps)
         sigmas = sigmas[int(num_steps * (1 - denoise)) :]
@@ -272,11 +233,9 @@ class DiffusionPipeline:
         latent, iter_time = sample_euler(
             CFGDenoiser(self), noise_scaled, sigmas, extra_args=extra_args
         )
-        # FIXME(arda): Fast hack to get the model working
-        if self.is_flux:
-            latent = FluxLatentFormat().process_out(latent)
-        else:
-            latent = SD3LatentFormat().process_out(latent)
+
+        latent = self.latent_format.process_out(latent)
+
         return latent, iter_time
 
     def generate_image(
@@ -370,11 +329,6 @@ class DiffusionPipeline:
         logger.debug(
             f"Pooled Conditioning dtype after casting: {pooled_conditioning.dtype}"
         )
-
-        # Generate img_ids and txt_ids if flux model is used
-        img_ids, txt_ids = None, None
-        if self.is_flux:
-            img_ids, txt_ids = self.generate_ids(latent_size=latent_size)
 
         # Reset peak memory info
         mx.metal.reset_peak_memory()
@@ -572,6 +526,82 @@ class DiffusionPipeline:
         noise = self.get_noise(seed, mean)
 
         return mean + std * noise
+
+
+class FluxPipeline(DiffusionPipeline):
+    def __init__(
+        self,
+        model: str = _DEFAULT_MODEL,
+        w16: bool = False,
+        shift: float = 1.0,
+        use_t5: bool = True,
+        model_size: str = "2b",
+        low_memory_mode: bool = True,
+        a16: bool = False,
+        local_ckpt=None,
+    ):
+        model_io.LOCAl_SD3_CKPT = local_ckpt
+        self.float16_dtype = mx.bfloat16
+        model_io._FLOAT16 = self.float16_dtype
+        self.dtype = self.float16_dtype if w16 else mx.float32
+        self.activation_dtype = self.float16_dtype if a16 else mx.float32
+        self.use_t5 = use_t5
+        mmdit_ckpt = MMDIT_CKPT[model_size]
+        self.low_memory_mode = low_memory_mode
+        self.mmdit = load_flux(float16=w16)
+        self.sampler = FluxSampler(shift=shift)
+        self.decoder = load_vae_decoder(float16=w16, key=mmdit_ckpt)
+        self.encoder = load_vae_encoder(float16=False, key=mmdit_ckpt)
+        self.latent_format = FluxLatentFormat()
+
+        if not use_t5:
+            logger.info("FLUX model is being used without T5. Setting use_t5 to True.")
+            self.use_t5 = True
+
+        self.clip_l = load_text_encoder(
+            model,
+            w16,
+            model_key="clip_l",
+        )
+        self.tokenizer_l = load_tokenizer(
+            model,
+            merges_key="tokenizer_l_merges",
+            vocab_key="tokenizer_l_vocab",
+            pad_with_eos=True,
+        )
+        self.t5_encoder = None
+        self.t5_tokenizer = None
+        if self.use_t5:
+            self.set_up_t5()
+
+    def encode_text(
+        self,
+        text: str,
+        cfg_weight: float = 7.5,
+        negative_text: str = "",
+    ):
+        tokens_l = self._tokenize(
+            self.tokenizer_l,
+            text,
+            (negative_text if cfg_weight > 1 else None),
+        )
+        conditioning_l = self.clip_l(tokens_l[[0], :])  # Ignore negative text
+        pooled_conditioning = conditioning_l.pooled_output
+
+        tokens_t5 = self._tokenize(
+            self.t5_tokenizer,
+            text,
+            (negative_text if cfg_weight > 1 else None),
+        )
+        padded_tokens_t5 = mx.zeros((1, 256)).astype(tokens_t5.dtype)
+        padded_tokens_t5[:, : tokens_t5.shape[1]] = tokens_t5[
+            [0], :
+        ]  # Ignore negative text
+        t5_conditioning = self.t5_encoder(padded_tokens_t5)
+        mx.eval(t5_conditioning)
+        conditioning = t5_conditioning
+
+        return conditioning, pooled_conditioning
 
 
 class CFGDenoiser(nn.Module):

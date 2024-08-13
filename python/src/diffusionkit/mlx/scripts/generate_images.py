@@ -7,7 +7,7 @@
 import argparse
 
 from argmaxtools.utils import get_logger
-from diffusionkit.mlx import DiffusionPipeline
+from diffusionkit.mlx import DiffusionPipeline, FluxPipeline
 
 logger = get_logger(__name__)
 
@@ -119,8 +119,10 @@ def cli():
         raise ValueError("Denoising factor must be between 0.0 and 1.0")
 
     shift = args.shift or SHIFT[args.model_size]
+    pipeline_class = FluxPipeline if args.model_size == "flux" else DiffusionPipeline
+
     # Load the models
-    sd = DiffusionPipeline(
+    sd = pipeline_class(
         model="argmaxinc/stable-diffusion",
         w16=args.w16,
         shift=shift,
@@ -129,7 +131,6 @@ def cli():
         low_memory_mode=args.low_memory_mode,
         a16=args.a16,
         local_ckpt=args.local_ckpt,
-        is_flux=args.model_size == "flux",
     )
 
     # Ensure that models are read in memory if needed
