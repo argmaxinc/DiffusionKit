@@ -352,7 +352,6 @@ class DiffusionPipeline:
                 f"Pre denoise active memory: {log['denoising']['pre']['active_memory']}GB"
             )
 
-        # TODO(arda): Implement denoising for FLUX model, wire up img_ids and txt_ids
         latents, iter_time = self.denoise_latents(
             conditioning,
             pooled_conditioning,
@@ -615,7 +614,7 @@ class CFGDenoiser(nn.Module):
         self, x_t, t, conditioning, cfg_weight: float = 7.5, pooled_conditioning=None
     ):
         if cfg_weight <= 0:
-            logger.info("CFG Weight disabled")
+            logger.debug("CFG Weight disabled")
             x_t_mmdit = x_t.astype(self.model.activation_dtype)
         else:
             x_t_mmdit = mx.concatenate([x_t] * 2, axis=0).astype(

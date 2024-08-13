@@ -682,6 +682,7 @@ def load_flux(
 
     flux_weights = _MMDIT[key][model_key]
     flux_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, flux_weights)
+    hf_hub_download(key, "config.json")  # To count number of downloads
     weights = mx.load(flux_weights_ckpt)
     weights = flux_state_dict_adjustments(
         weights, prefix="", hidden_size=config.hidden_size, mlp_ratio=config.mlp_ratio

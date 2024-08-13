@@ -844,7 +844,7 @@ class RoPE(nn.Module):
             self.rope_embeddings = self.rope(positions, self.theta)
             self.rope_embeddings = mx.expand_dims(self.rope_embeddings, axis=1)
         else:
-            print("Returning cached RoPE embeddings")
+            logger.debug("Returning cached RoPE embeddings")
 
         return self.rope_embeddings
 
