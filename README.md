@@ -107,8 +107,8 @@ pipeline = DiffusionPipeline(
 
 For FLUX:
 ```python
-from diffusionkit.mlx import FLUXPipeline
-pipeline = DiffusionPipeline(
+from diffusionkit.mlx import FluxPipeline
+pipeline = FluxPipeline(
   model="argmaxinc/stable-diffusion",
   shift=1.0,
   model_version="FLUX.1-schnell",
@@ -122,8 +122,8 @@ Finally, to generate the image, use the `generate_image()` function:
 ```python
 HEIGHT = 512
 WIDTH = 512
-NUM_STEPS = 50    # 4 for FLUX.1-schnell
-CFG_WEIGHT = 5.0  # 0. for FLUX.1-schnell
+NUM_STEPS = 4  #  4 for FLUX.1-schnell, 50 for SD3
+CFG_WEIGHT = 0. # for FLUX.1-schnell, 5. for SD3
 
 image, _ = pipeline.generate_image(
   "a photo of a cat",
