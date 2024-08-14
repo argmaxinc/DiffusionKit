@@ -93,7 +93,7 @@ pipeline = DiffusionPipeline(
   w16=True,
   shift=3.0,
   use_t5=False,
-  model_size="2b",
+  model_version="2b",
   low_memory_mode=False,
   a16=True,
 )

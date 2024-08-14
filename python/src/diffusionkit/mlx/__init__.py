@@ -33,9 +33,9 @@ from .sampler import FluxSampler, ModelSamplingDiscreteFlow
 logger = get_logger(__name__)
 
 MMDIT_CKPT = {
-    "2b": "stabilityai/stable-diffusion-3-medium",
-    "8b": "models/sd3_8b_beta.safetensors",
-    "flux": "argmaxinc/mlx-FLUX.1-schnell",
+    "stable-diffusion-3-medium": "stabilityai/stable-diffusion-3-medium",
+    "sd3-8b-unreleased": "models/sd3_8b_beta.safetensors",  # unreleased
+    "FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
 }
 
 
@@ -46,7 +46,7 @@ class DiffusionPipeline:
         w16: bool = False,
         shift: float = 1.0,
         use_t5: bool = True,
-        model_size: str = "2b",
+        model_version: str = "stable-diffusion-3-medium",
         low_memory_mode: bool = True,
         a16: bool = False,
         local_ckpt=None,
@@ -57,12 +57,12 @@ class DiffusionPipeline:
         self.dtype = self.float16_dtype if w16 else mx.float32
         self.activation_dtype = self.float16_dtype if a16 else mx.float32
         self.use_t5 = use_t5
-        mmdit_ckpt = MMDIT_CKPT[model_size]
+        mmdit_ckpt = MMDIT_CKPT[model_version]
         self.low_memory_mode = low_memory_mode
         self.mmdit = load_mmdit(
             float16=w16,
             key=mmdit_ckpt,
-            model_key=model_size,
+            model_key=model_version,
             low_memory_mode=low_memory_mode,
         )
         self.sampler = ModelSamplingDiscreteFlow(shift=shift)
@@ -120,9 +120,10 @@ class DiffusionPipeline:
     def ensure_models_are_loaded(self):
         mx.eval(self.mmdit.parameters())
         mx.eval(self.clip_l.parameters())
-        mx.eval(self.clip_g.parameters())
         mx.eval(self.decoder.parameters())
-        if self.use_t5:
+        if hasattr(self, "clip_g"):
+            mx.eval(self.clip_g.parameters())
+        if hasattr(self, "t5_encoder") and self.use_t5:
             mx.eval(self.t5_encoder.parameters())
 
     def _tokenize(self, tokenizer, text: str, negative_text: Optional[str] = None):
@@ -539,7 +540,7 @@ class FluxPipeline(DiffusionPipeline):
         w16: bool = False,
         shift: float = 1.0,
         use_t5: bool = True,
-        model_size: str = "2b",
+        model_version: str = "FLUX.1-schnell",
         low_memory_mode: bool = True,
         a16: bool = False,
         local_ckpt=None,
@@ -549,8 +550,7 @@ class FluxPipeline(DiffusionPipeline):
         model_io._FLOAT16 = self.float16_dtype
         self.dtype = self.float16_dtype if w16 else mx.float32
         self.activation_dtype = self.float16_dtype if a16 else mx.float32
-        self.use_t5 = use_t5
-        mmdit_ckpt = MMDIT_CKPT[model_size]
+        mmdit_ckpt = MMDIT_CKPT[model_version]
         self.low_memory_mode = low_memory_mode
         self.mmdit = load_flux(float16=w16, low_memory_mode=low_memory_mode)
         self.sampler = FluxSampler(shift=shift)
@@ -559,8 +559,8 @@ class FluxPipeline(DiffusionPipeline):
         self.latent_format = FluxLatentFormat()
 
         if not use_t5:
-            logger.info("FLUX model is being used without T5. Setting use_t5 to True.")
-            self.use_t5 = True
+            logger.warning("FLUX can not be used without T5. Loading T5..")
+        self.use_t5 = True
 
         self.clip_l = load_text_encoder(
             model,
@@ -664,8 +664,6 @@ class LatentFormat:
 
 
 class SD3LatentFormat(LatentFormat):
-    """Latents are slightly shifted from center - this class must be called after VAE Decode to correct for the shift"""
-
     def __init__(self):
         super().__init__()
         self.scale_factor = 1.5305

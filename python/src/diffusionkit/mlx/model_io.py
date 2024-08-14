@@ -35,11 +35,11 @@ RANK = 32
 _DEFAULT_MMDIT = "stabilityai/stable-diffusion-3-medium"
 _MMDIT = {
     "stabilityai/stable-diffusion-3-medium": {
-        "2b": "sd3_medium.safetensors",
+        "stable-diffusion-3-medium": "sd3_medium.safetensors",
         "vae": "sd3_medium.safetensors",
     },
     "argmaxinc/mlx-FLUX.1-schnell": {
-        "flux": "flux-schnell.safetensors",
+        "FLUX.1-schnell": "flux-schnell.safetensors",
         "vae": "ae.safetensors",
     },
 }
@@ -72,12 +72,12 @@ _PREFIX = {
 _FLOAT16 = mx.bfloat16
 
 DEPTH = {
-    "2b": 24,
-    "8b": 38,
+    "stable-diffusion-3-medium": 24,
+    "sd3-8b-unreleased": 38,
 }
 MAX_LATENT_RESOLUTION = {
-    "2b": 96,
-    "8b": 192,
+    "stable-diffusion-3-medium": 96,
+    "sd3-8b-unreleased": 192,
 }
 
 LOCAl_SD3_CKPT = None
@@ -675,7 +675,7 @@ def load_mmdit(
 def load_flux(
     key: str = "argmaxinc/mlx-FLUX.1-schnell",
     float16: bool = False,
-    model_key: str = "flux",
+    model_key: str = "FLUX.1-schnell",
     low_memory_mode: bool = True,
 ):
     """Load the MM-DiT Flux model from the checkpoint file."""
