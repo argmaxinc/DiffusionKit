@@ -28,6 +28,10 @@ pip install -e .
 
 ### Hugging Face Hub Credentials
 
+<details>
+  <summary> Click to expand </summary>
+
+
 [Stable Diffusion 3](https://huggingface.co/stabilityai/stable-diffusion-3-medium) requires users to accept the terms before downloading the checkpoint. Once you accept the terms, sign in with your Hugging Face hub READ token as below:
 > [!IMPORTANT]
 > If using a fine-grained token, it is also necessary to [edit permissions](https://huggingface.co/settings/tokens) to allow `Read access to contents of all public gated repos you can access`
@@ -35,6 +39,9 @@ pip install -e .
 ```bash
 huggingface-cli login --token YOUR_HF_HUB_TOKEN
 ```
+
+</details>
+
 
 ## <a name="converting-models-to-coreml"></a> Converting Models from PyTorch to Core ML
 
@@ -67,56 +74,61 @@ Note:
   <summary> Click to expand </summary>
 
 ### CLI ###
-For simple text-to-image in float16 precision:
+
+Most simple:
 ```shell
-diffusionkit-cli --prompt "a photo of a cat" --output-path </path/to/output/image.png> --seed 0 --w16 --a16
+diffusionkit-cli --prompt "a photo of a cat" --output-path </path/to/output/image.png>
 ```
 
-Some notable optional arguments:
-- For image-to-image, use `--image-path` (path to input image) and `--denoise` (value between 0. and 1.)
-- T5 text embeddings, use `--t5`
-- For different resolutions, use `--height` and `--width`
-- For using a local checkpoint, use `--local-ckpt </path/to/ckpt.safetensors>` (e.g. `~/models/stable-diffusion-3-medium/sd3_medium.safetensors`).
+Some notable optional arguments for:
+- Reproduciblity of results, use `--seed`
+- image-to-image, use `--image-path` (path to input image) and `--denoise` (value between 0. and 1.)
+- Enabling T5 encoder in SD3, use `--t5` (FLUX must use T5 regardless of this argument)
+- Different resolutions, use `--height` and `--width`
+- Using a local checkpoint, use `--local-ckpt </path/to/ckpt.safetensors>` (e.g. `~/models/stable-diffusion-3-medium/sd3_medium.safetensors`).
 
 Please refer to the help menu for all available arguments: `diffusionkit-cli -h`.
 
 ### Code ###
-After installing the package, import it using:
+
+For Stable Diffusion 3:
 ```python
 from diffusionkit.mlx import DiffusionPipeline
-```
-
-Then, initialize the pipeline object:
-```python
 pipeline = DiffusionPipeline(
   model="argmaxinc/stable-diffusion",
-  w16=True,
   shift=3.0,
   use_t5=False,
-  model_version="2b",
-  low_memory_mode=False,
+  model_version="stable-diffusion-3-medium",
+  low_memory_mode=True,
   a16=True,
+  w16=True,
 )
 ```
 
-Some notable optional arguments:
-- For T5 text embeddings, set `use_t5=True`
-- For using a local checkpoint, set `local_ckpt=</path/to/ckpt.safetensors>` (e.g. `~/models/stable-diffusion-3-medium/sd3_medium.safetensors`).
-- If you want to use the `pipeline` object more than once, set `low_memory_mode=False`.
-- For loading weights in FP32, set `w16=False`
-- For FP32 activations, set `a16=False`
-
-Note: Only `2b` model size is available for this pipeline.
+For FLUX:
+```python
+from diffusionkit.mlx import FLUXPipeline
+pipeline = DiffusionPipeline(
+  model="argmaxinc/stable-diffusion",
+  shift=1.0,
+  model_version="FLUX.1-schnell",
+  low_memory_mode=True,
+  a16=True,
+  w16=True,
+)
+```
 
 Finally, to generate the image, use the `generate_image()` function:
 ```python
 HEIGHT = 512
 WIDTH = 512
+NUM_STEPS = 50    # 4 for FLUX.1-schnell
+CFG_WEIGHT = 5.0  # 0. for FLUX.1-schnell
 
 image, _ = pipeline.generate_image(
-  "a photo of a cat holding a sign that says 'Hello!'",
-  cfg_weight=5.0,
-  num_steps=50,
+  "a photo of a cat",
+  cfg_weight=CFG_WEIGHT,
+  num_steps=NUM_STEPS,
   latent_size=(HEIGHT // 8, WIDTH // 8),
 )
 ```
@@ -124,7 +136,6 @@ Some notable optional arguments:
 - For image-to-image, use `image_path` (path to input image) and `denoise` (value between 0. and 1.) input variables.
 - For seed, use `seed` input variable.
 - For negative prompt, use `negative_text` input variable.
-
 
 The generated `image` can be saved with:
 ```python
