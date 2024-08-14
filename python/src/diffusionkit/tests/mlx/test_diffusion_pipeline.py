@@ -7,18 +7,16 @@ import json
 import os
 import unittest
 
-import mlx.core as mx
-import numpy as np
 from argmaxtools.utils import get_logger
-from diffusionkit.mlx import DiffusionPipeline
+from diffusionkit.mlx import MMDIT_CKPT, DiffusionPipeline
 from diffusionkit.utils import image_psnr
 from huggingface_hub import hf_hub_download
 from PIL import Image
 
 logger = get_logger(__name__)
 
-W16 = False
-A16 = False
+W16 = True
+A16 = True
 TEST_PSNR_THRESHOLD = 20
 TEST_MIN_SPEEDUP = 0.95
 SD3_TEST_IMAGES_REPO = "argmaxinc/sd-test-images"
@@ -27,7 +25,7 @@ CACHE_SUBFOLDER = None
 
 LOW_MEMORY_MODE = True
 SAVE_IMAGES = True
-MODEL_SIZE = "2b"
+MODEL_VERSION = "stable-diffusion-3-medium"
 USE_T5 = False
 SKIP_CORRECTNESS = False
 
@@ -51,13 +49,16 @@ class TestSD3Pipeline(unittest.TestCase):
             metadata = json.load(f)
 
         # Group metadata by model size
-        model_examples = {"2b": [], "8b": []}
+        model_examples = {"stable-diffusion-3-medium": []}
         for data in metadata:
-            model_examples[data["model_size"]].append(data)
+            model_examples[data["model_version"]].append(data)
 
-        for model_size, examples in model_examples.items():
+        for model_version, examples in model_examples.items():
             sd3 = DiffusionPipeline(
-                model_size=model_size, w16=W16, low_memory_mode=LOW_MEMORY_MODE, a16=A16
+                model_version=model_version,
+                w16=W16,
+                low_memory_mode=LOW_MEMORY_MODE,
+                a16=A16,
             )
             if not LOW_MEMORY_MODE:
                 sd3.ensure_models_are_loaded()
@@ -93,7 +94,7 @@ class TestSD3Pipeline(unittest.TestCase):
                 if LOW_MEMORY_MODE:
                     del sd3
                     sd3 = DiffusionPipeline(
-                        model_size=model_size,
+                        model_version=model_version,
                         w16=W16,
                         low_memory_mode=LOW_MEMORY_MODE,
                         a16=A16,
@@ -105,21 +106,24 @@ class TestSD3Pipeline(unittest.TestCase):
             metadata = json.load(f)
 
         # Group metadata by model size
-        model_examples = {"2b": [], "8b": []}
+        model_examples = {"stable-diffusion-3-medium": []}
         for data in metadata:
-            model_examples[data["model_size"]].append(data)
+            model_examples[data["model_version"]].append(data)
 
         sd3 = DiffusionPipeline(
-            model_size=MODEL_SIZE, w16=W16, low_memory_mode=LOW_MEMORY_MODE, a16=A16
+            model_version=MODEL_VERSION,
+            w16=W16,
+            low_memory_mode=LOW_MEMORY_MODE,
+            a16=A16,
         )
         if not LOW_MEMORY_MODE:
             sd3.ensure_models_are_loaded()
 
         log = None
-        for example in model_examples[MODEL_SIZE]:
+        for example in model_examples[MODEL_VERSION]:
             sd3.use_t5 = USE_T5
             logger.info(
-                f"Testing memory usage... USE_T5 = {USE_T5} | MODEL_SIZE = {MODEL_SIZE}"
+                f"Testing memory usage... USE_T5 = {USE_T5} | MODEL_VERSION = {MODEL_VERSION}"
             )
             _, log = sd3.generate_image(
                 text=example["prompt"],
@@ -132,7 +136,7 @@ class TestSD3Pipeline(unittest.TestCase):
             break
 
         out_folder = os.path.join(TEST_CACHE_DIR, CACHE_SUBFOLDER)
-        out_path = os.path.join(out_folder, f"{MODEL_SIZE}_log.json")
+        out_path = os.path.join(out_folder, f"{MODEL_VERSION}_log.json")
         if not os.path.exists(out_folder):
             os.makedirs(out_folder, exist_ok=True)
         with open(out_path, "w") as f:
@@ -142,12 +146,12 @@ class TestSD3Pipeline(unittest.TestCase):
 
 
 def main(args):
-    global LOW_MEMORY_MODE, SAVE_IMAGES, SKIP_CORRECTNESS, MODEL_SIZE, W16, A16, CACHE_SUBFOLDER, USE_T5
+    global LOW_MEMORY_MODE, SAVE_IMAGES, SKIP_CORRECTNESS, MODEL_VERSION, W16, A16, CACHE_SUBFOLDER, USE_T5
 
     LOW_MEMORY_MODE = args.low_memory_mode
     SAVE_IMAGES = args.save_images
     SKIP_CORRECTNESS = args.skip_correctness
-    MODEL_SIZE = args.model_size
+    MODEL_VERSION = args.model_version
     W16 = args.w16
     A16 = args.a16
     CACHE_SUBFOLDER = args.subfolder
@@ -181,7 +185,11 @@ if __name__ == "__main__":
         "--skip-correctness", action="store_true", help="Skip the correctness test."
     )
     parser.add_argument(
-        "--model-size", type=str, default="2b", help="Model size to use for the test."
+        "--model-size",
+        type=str,
+        default="stable-diffusion-3-medium",
+        choices=tuple(MMDIT_CKPT.keys()),
+        help="model version to test",
     )
     parser.add_argument(
         "--w16", action="store_true", help="Loads the models in float16."
@@ -193,7 +201,7 @@ if __name__ == "__main__":
         "--subfolder",
         default="default",
         type=str,
-        help=f"If specified, this string will be appended to the cache directory name.",
+        help="If specified, this string will be appended to the cache directory name.",
     )
     parser.add_argument(
         "--use-t5", action="store_true", help="Use T5 model for text generation."

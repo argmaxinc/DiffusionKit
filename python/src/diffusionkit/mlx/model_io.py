@@ -16,6 +16,7 @@ from transformers import T5Config
 
 from .clip import CLIPTextModel
 from .config import (
+    FLUX_SCHNELL,
     AutoencoderConfig,
     CLIPTextModelConfig,
     SD3_2b,
@@ -34,8 +35,12 @@ RANK = 32
 _DEFAULT_MMDIT = "stabilityai/stable-diffusion-3-medium"
 _MMDIT = {
     "stabilityai/stable-diffusion-3-medium": {
-        "mmdit_2b": "sd3_medium.safetensors",
+        "stable-diffusion-3-medium": "sd3_medium.safetensors",
         "vae": "sd3_medium.safetensors",
+    },
+    "argmaxinc/mlx-FLUX.1-schnell": {
+        "FLUX.1-schnell": "flux-schnell.safetensors",
+        "vae": "ae.safetensors",
     },
 }
 _DEFAULT_MODEL = "argmaxinc/stable-diffusion"
@@ -53,16 +58,213 @@ _MODELS = {
     },
 }
 
+_PREFIX = {
+    "stabilityai/stable-diffusion-3-medium": {
+        "vae_encoder": "first_stage_model.encoder.",
+        "vae_decoder": "first_stage_model.decoder.",
+    },
+    "argmaxinc/mlx-FLUX.1-schnell": {
+        "vae_encoder": "encoder.",
+        "vae_decoder": "decoder.",
+    },
+}
+
+_FLOAT16 = mx.bfloat16
+
 DEPTH = {
-    "2b": 24,
-    "8b": 38,
+    "stable-diffusion-3-medium": 24,
+    "sd3-8b-unreleased": 38,
 }
 MAX_LATENT_RESOLUTION = {
-    "2b": 96,
-    "8b": 192,
+    "stable-diffusion-3-medium": 96,
+    "sd3-8b-unreleased": 192,
 }
 
 LOCAl_SD3_CKPT = None
+
+
+def flux_state_dict_adjustments(state_dict, prefix="", hidden_size=3072, mlp_ratio=4):
+    state_dict = {
+        k.replace("double_blocks", "multimodal_transformer_blocks"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("single_blocks", "unified_transformer_blocks"): v
+        for k, v in state_dict.items()
+    }
+
+    # Split qkv proj and rename:
+    # *transformer_block.attn.qkv.{weigth/bias}  -> transformer_block.attn.{q/k/v}_proj.{weigth/bias}
+    # *transformer_block.attn.proj.{weigth/bias} -> transformer_block.attn.o_proj.{weight/bias}
+    keys_to_pop = []
+    state_dict_update = {}
+    for k in state_dict:
+        if "attn.qkv" in k:
+            keys_to_pop.append(k)
+            for name, weight in zip(["q", "k", "v"], mx.split(state_dict[k], 3)):
+                state_dict_update[k.replace("attn.qkv", f"attn.{name}_proj")] = (
+                    weight if "weight" in k else weight
+                )
+
+    [state_dict.pop(k) for k in keys_to_pop]
+    state_dict.update(state_dict_update)
+
+    state_dict = {
+        k.replace("txt_attn", "text_transformer_block.attn"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("img_attn", "image_transformer_block.attn"): v
+        for k, v in state_dict.items()
+    }
+
+    state_dict = {
+        k.replace("txt_mlp.0", "text_transformer_block.mlp.fc1"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("txt_mlp.2", "text_transformer_block.mlp.fc2"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("img_mlp.0", "image_transformer_block.mlp.fc1"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("img_mlp.2", "image_transformer_block.mlp.fc2"): v
+        for k, v in state_dict.items()
+    }
+
+    state_dict = {
+        k.replace("img_mod.lin", "image_transformer_block.adaLN_modulation.layers.1"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("txt_mod.lin", "text_transformer_block.adaLN_modulation.layers.1"): v
+        for k, v in state_dict.items()
+    }
+
+    state_dict = {k.replace(".proj", ".o_proj"): v for k, v in state_dict.items()}
+
+    state_dict = {
+        k.replace(".attn.norm.key_norm.scale", ".qk_norm.k_norm.weight"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace(".attn.norm.query_norm.scale", ".qk_norm.q_norm.weight"): v
+        for k, v in state_dict.items()
+    }
+
+    state_dict = {
+        k.replace(".modulation.lin", ".transformer_block.adaLN_modulation.layers.1"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace(".norm.key_norm.scale", ".transformer_block.qk_norm.k_norm.weight"): v
+        for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace(
+            ".norm.query_norm.scale", ".transformer_block.qk_norm.q_norm.weight"
+        ): v
+        for k, v in state_dict.items()
+    }
+
+    # Split qkv proj and mlp in unified transformer block and rename:
+    keys_to_pop = []
+    state_dict_update = {}
+    for k in state_dict:
+        if ".linear1" in k:
+            keys_to_pop.append(k)
+            for name, weight in zip(
+                ["attn.q", "attn.k", "attn.v", "mlp.fc1"],
+                mx.split(
+                    state_dict[k],
+                    [
+                        hidden_size,
+                        2 * hidden_size,
+                        3 * hidden_size,
+                        (3 + mlp_ratio) * hidden_size,
+                    ],
+                ),
+            ):
+                if name == "mlp.fc1":
+                    state_dict_update[
+                        k.replace(".linear1", f".transformer_block.{name}")
+                    ] = (weight if "weight" in k else weight)
+                else:
+                    state_dict_update[
+                        k.replace(".linear1", f".transformer_block.{name}_proj")
+                    ] = (weight if "weight" in k else weight)
+
+    [state_dict.pop(k) for k in keys_to_pop]
+    state_dict.update(state_dict_update)
+
+    # Split o_proj and mlp in unified transformer block and rename:
+    keys_to_pop = []
+    state_dict_update = {}
+    for k in state_dict:
+        if ".linear2" in k:
+            keys_to_pop.append(k)
+            if "bias" in k:
+                state_dict_update[
+                    k.replace(".linear2", ".transformer_block.attn.o_proj")
+                ] = state_dict[k]
+                state_dict_update[
+                    k.replace(".linear2", ".transformer_block.mlp.fc2")
+                ] = state_dict[k]
+            else:
+                for name, weight in zip(
+                    ["attn.o", "mlp.fc2"],
+                    mx.split(
+                        state_dict[k],
+                        [hidden_size, (1 + mlp_ratio) * hidden_size],
+                        axis=1,
+                    ),
+                ):
+                    if name == "mlp.fc2":
+                        state_dict_update[
+                            k.replace(".linear2", f".transformer_block.{name}")
+                        ] = (weight if "weight" in k else weight)
+                    else:
+                        state_dict_update[
+                            k.replace(".linear2", f".transformer_block.{name}_proj")
+                        ] = (weight if "weight" in k else weight)
+
+    [state_dict.pop(k) for k in keys_to_pop]
+    state_dict.update(state_dict_update)
+
+    state_dict = {
+        k.replace("img_in.", "x_embedder.proj."): v for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("txt_in.", "context_embedder."): v for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("time_in.", "t_embedder."): v for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace("vector_in.", "y_embedder."): v for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace(".in_layer.", ".mlp.layers.0."): v for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace(".out_layer.", ".mlp.layers.2."): v for k, v in state_dict.items()
+    }
+
+    state_dict = {
+        k.replace(
+            "final_layer.adaLN_modulation.1", "final_layer.adaLN_modulation.layers.1"
+        ): v
+        for k, v in state_dict.items()
+    }
+
+    state_dict["x_embedder.proj.weight"] = mx.expand_dims(
+        mx.expand_dims(state_dict["x_embedder.proj.weight"], axis=1), axis=1
+    )
+
+    return state_dict
 
 
 def mmdit_state_dict_adjustments(state_dict, prefix=""):
@@ -151,7 +353,9 @@ def mmdit_state_dict_adjustments(state_dict, prefix=""):
     return state_dict
 
 
-def vae_decoder_state_dict_adjustments(state_dict, prefix=""):
+def vae_decoder_state_dict_adjustments(state_dict, prefix="decoder."):
+    # Keep only the keys that have the prefix
+    state_dict = {k: v for k, v in state_dict.items() if prefix in k}
     state_dict = {k.replace(prefix, ""): v for k, v in state_dict.items()}
 
     # Filter out MMDIT related tensors
@@ -228,6 +432,8 @@ def vae_decoder_state_dict_adjustments(state_dict, prefix=""):
 
 
 def vae_encoder_state_dict_adjustments(state_dict, prefix="encoder."):
+    # Keep only the keys that have the prefix
+    state_dict = {k: v for k, v in state_dict.items() if prefix in k}
     state_dict = {k.replace(prefix, ""): v for k, v in state_dict.items()}
 
     # Filter out MMDIT related tensors
@@ -431,7 +637,7 @@ https://github.com/ml-explore/mlx-examples/blob/main/stable_diffusion/stable_dif
 
 
 def _load_safetensor_weights(mapper, model, weight_file, float16: bool = False):
-    dtype = mx.float16 if float16 else mx.float32
+    dtype = _FLOAT16 if float16 else mx.float32
     weights = mx.load(weight_file)
     weights = _flatten([mapper(k, v.astype(dtype)) for k, v in weights.items()])
     model.update(tree_unflatten(weights))
@@ -448,16 +654,43 @@ def load_mmdit(
     key: str = _DEFAULT_MMDIT,
     float16: bool = False,
     model_key: str = "mmdit_2b",
+    low_memory_mode: bool = True,
 ):
     """Load the MM-DiT model from the checkpoint file."""
-    dtype = mx.float16 if float16 else mx.float32
-    config = SD3_2b  # FIXME
+    dtype = _FLOAT16 if float16 else mx.float32
+    config = SD3_2b
+    config.low_memory_mode = low_memory_mode
     model = MMDiT(config)
 
     mmdit_weights = _MMDIT[key][model_key]
     mmdit_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, mmdit_weights)
     weights = mx.load(mmdit_weights_ckpt)
     weights = mmdit_state_dict_adjustments(weights, prefix="model.diffusion_model.")
+    weights = {k: v.astype(dtype) for k, v in weights.items()}
+    model.update(tree_unflatten(tree_flatten(weights)))
+
+    return model
+
+
+def load_flux(
+    key: str = "argmaxinc/mlx-FLUX.1-schnell",
+    float16: bool = False,
+    model_key: str = "FLUX.1-schnell",
+    low_memory_mode: bool = True,
+):
+    """Load the MM-DiT Flux model from the checkpoint file."""
+    dtype = _FLOAT16 if float16 else mx.float32
+    config = FLUX_SCHNELL
+    config.low_memory_mode = low_memory_mode
+    model = MMDiT(config)
+
+    flux_weights = _MMDIT[key][model_key]
+    flux_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, flux_weights)
+    hf_hub_download(key, "config.json")  # To count number of downloads
+    weights = mx.load(flux_weights_ckpt)
+    weights = flux_state_dict_adjustments(
+        weights, prefix="", hidden_size=config.hidden_size, mlp_ratio=config.mlp_ratio
+    )
     weights = {k: v.astype(dtype) for k, v in weights.items()}
     model.update(tree_unflatten(tree_flatten(weights)))
 
@@ -549,12 +782,12 @@ def load_vae_decoder(
         resnet_groups=config.resnet_groups,
     )
 
-    dtype = mx.float16 if float16 else mx.float32
+    dtype = _FLOAT16 if float16 else mx.float32
     vae_weights = _MMDIT[key][model_key]
     vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
     weights = mx.load(vae_weights_ckpt)
     weights = vae_decoder_state_dict_adjustments(
-        weights, prefix="first_stage_model.decoder."
+        weights, prefix=_PREFIX[key]["vae_decoder"]
     )
     weights = {k: v.astype(dtype) for k, v in weights.items()}
     model.update(tree_unflatten(tree_flatten(weights)))
@@ -577,12 +810,12 @@ def load_vae_encoder(
         resnet_groups=config.resnet_groups,
     )
 
-    dtype = mx.float16 if float16 else mx.float32
+    dtype = _FLOAT16 if float16 else mx.float32
     vae_weights = _MMDIT[key][model_key]
     vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
     weights = mx.load(vae_weights_ckpt)
     weights = vae_encoder_state_dict_adjustments(
-        weights, prefix="first_stage_model.encoder."
+        weights, prefix=_PREFIX[key]["vae_encoder"]
     )
     weights = {k: v.astype(dtype) for k, v in weights.items()}
     model.update(tree_unflatten(tree_flatten(weights)))
@@ -599,7 +832,7 @@ def load_t5_encoder(
     config = T5Config.from_pretrained("google/t5-v1_1-xxl")
     model = SD3T5Encoder(config, low_memory_mode=low_memory_mode)
 
-    dtype = mx.float16 if float16 else mx.float32
+    dtype = _FLOAT16 if float16 else mx.float32
     t5_weights = _MODELS[key][model_key]
     weights = mx.load(hf_hub_download(key, t5_weights))
     weights = t5_encoder_state_dict_adjustments(weights, prefix="")

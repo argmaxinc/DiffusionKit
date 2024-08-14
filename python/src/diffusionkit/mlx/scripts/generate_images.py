@@ -7,21 +7,25 @@
 import argparse
 
 from argmaxtools.utils import get_logger
-from diffusionkit.mlx import DiffusionPipeline
+from diffusionkit.mlx import MMDIT_CKPT, DiffusionPipeline, FluxPipeline
 
 logger = get_logger(__name__)
 
+# Defaults
 HEIGHT = {
-    "2b": 512,
-    "8b": 1024,
+    "stable-diffusion-3-medium": 512,
+    "sd3-8b-unreleased": 1024,
+    "FLUX.1-schnell": 512,
 }
 WIDTH = {
-    "2b": 512,
-    "8b": 1024,
+    "stable-diffusion-3-medium": 512,
+    "sd3-8b-unreleased": 1024,
+    "FLUX.1-schnell": 512,
 }
 SHIFT = {
-    "2b": 3.0,
-    "8b": 3.0,
+    "stable-diffusion-3-medium": 3.0,
+    "sd3-8b-unreleased": 3.0,
+    "FLUX.1-schnell": 1.0,
 }
 
 
@@ -34,10 +38,10 @@ def cli():
         "--image-path", type=str, help="Path to the image prompt", default=None
     )
     parser.add_argument(
-        "--model-size",
-        choices=("2b", "8b"),
-        default="2b",
-        help="Stable Diffusion 3 model size (2b or 8b).",
+        "--model-version",
+        choices=tuple(MMDIT_CKPT.keys()),
+        default="FLUX.1-schnell",
+        help="Diffusion model version, e.g. FLUX-1.schnell, stable-diffusion-3-medium",
     )
     parser.add_argument(
         "--steps", type=int, default=50, help="Number of diffusion steps."
@@ -82,12 +86,6 @@ def cli():
         help="Disable low memory mode: No models offloading",
     )
     parser.add_argument(
-        "--w16", action="store_true", help="Loads the models in float16."
-    )
-    parser.add_argument(
-        "--a16", action="store_true", help="Use float16 for the model activations."
-    )
-    parser.add_argument(
         "--benchmark-mode",
         action="store_true",
         help="Run the script in benchmark mode (no memory cleanup).",
@@ -106,6 +104,13 @@ def cli():
     )
     args = parser.parse_args()
 
+    args.w16 = True
+    args.a16 = True
+
+    if args.model_version == "FLUX.1-schnell" and args.cfg > 0.0:
+        logger.warning("Disabling CFG for FLUX.1-schnell model.")
+        args.cfg = 0.0
+
     if args.benchmark_mode:
         if args.low_memory_mode:
             logger.warning("Benchmark mode is enabled, disabling low memory mode.")
@@ -114,14 +119,16 @@ def cli():
     if args.denoise < 0.0 or args.denoise > 1.0:
         raise ValueError("Denoising factor must be between 0.0 and 1.0")
 
-    shift = args.shift or SHIFT[args.model_size]
+    shift = args.shift or SHIFT[args.model_version]
+    pipeline_class = FluxPipeline if "FLUX" in args.model_version else DiffusionPipeline
+
     # Load the models
-    sd = DiffusionPipeline(
+    sd = pipeline_class(
         model="argmaxinc/stable-diffusion",
         w16=args.w16,
         shift=shift,
         use_t5=args.t5,
-        model_size=args.model_size,
+        model_version=args.model_version,
         low_memory_mode=args.low_memory_mode,
         a16=args.a16,
         local_ckpt=args.local_ckpt,
@@ -131,8 +138,8 @@ def cli():
     if args.preload_models:
         sd.ensure_models_are_loaded()
 
-    height = args.height or HEIGHT[args.model_size]
-    width = args.width or WIDTH[args.model_size]
+    height = args.height or HEIGHT[args.model_version]
+    width = args.width or WIDTH[args.model_version]
     logger.info(f"Output image resolution will be {height}x{width}")
 
     if args.benchmark_mode:

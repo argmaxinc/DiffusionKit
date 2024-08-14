@@ -9,12 +9,13 @@ import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
 from argmaxtools.utils import get_logger
-from beartype.typing import Tuple
-from jaxtyping import Float
+from beartype.typing import Dict, List, Optional, Tuple
 
-from .config import MMDiTConfig
+from .config import MMDiTConfig, PositionalEncoding
 
 logger = get_logger(__name__)
+
+SDPA_FLASH_ATTN_THRESHOLD = 1000
 
 
 class MMDiT(nn.Module):
@@ -25,22 +26,25 @@ class MMDiT(nn.Module):
     def __init__(self, config: MMDiTConfig):
         super().__init__()
         self.config = config
-        self.input_config: dict = {
-            "latent_image_embeddings": (
-                2,
-                self.config.latent_height,
-                self.config.latent_width,
-                16,
-            ),
-            "token_level_text_embeddings": (2, 154, 1, 4096),
-            "pooled_text_embeddings": (2, 1, 1, 2048),
-            "timestep": [2],
-        }
 
         # Input adapters and embeddings
         self.x_embedder = LatentImageAdapter(config)
-        self.x_pos_embedder = LatentImagePositionalEmbedding(config)
-        self.y_embedder = PooledTextEmbeddingAdater(config)
+
+        if config.pos_embed_type == PositionalEncoding.LearnedInputEmbedding:
+            self.x_pos_embedder = LatentImagePositionalEmbedding(config)
+            self.pre_sdpa_rope = nn.Identity()
+        elif config.pos_embed_type == PositionalEncoding.PreSDPARope:
+            # self.x_pos_embedder = nn.Identity()  # skip input positional encodings
+            self.pre_sdpa_rope = RoPE(
+                theta=10000,
+                axes_dim=config.rope_axes_dim,
+            )
+        else:
+            raise ValueError(
+                f"Unsupported positional encoding type: {config.pos_embed_type}"
+            )
+
+        self.y_embedder = PooledTextEmbeddingAdapter(config)
         self.t_embedder = TimestepAdapter(config)
         self.context_embedder = nn.Linear(
             config.token_level_text_embed_dim,
@@ -49,10 +53,17 @@ class MMDiT(nn.Module):
 
         self.multimodal_transformer_blocks = [
             MultiModalTransformerBlock(
-                config, skip_text_post_sdpa=i == config.depth - 1
+                config,
+                skip_text_post_sdpa=(i == config.depth_multimodal - 1)
+                and (config.depth_unified < 1),
             )
-            for i in range(config.depth)
+            for i in range(config.depth_multimodal)
         ]
+
+        if config.depth_unified > 0:
+            self.unified_transformer_blocks = [
+                UnifiedTransformerBlock(config) for _ in range(config.depth_unified)
+            ]
 
         self.final_layer = FinalLayer(config)
 
@@ -72,63 +83,128 @@ class MMDiT(nn.Module):
             timestep
         )
         token_level_text_embeddings = self.context_embedder(token_level_text_embeddings)
-        latent_image_embeddings = self.x_embedder(
-            latent_image_embeddings
-        ) + self.x_pos_embedder(latent_image_embeddings)
+
+        if hasattr(self, "x_pos_embedder"):
+            latent_image_embeddings = self.x_embedder(
+                latent_image_embeddings
+            ) + self.x_pos_embedder(latent_image_embeddings)
+        else:
+            latent_image_embeddings = self.x_embedder(latent_image_embeddings)
+
         latent_image_embeddings = latent_image_embeddings.reshape(
             batch, -1, 1, self.config.hidden_size
         )
 
-        # Transformer layers
-        count = 0
-        for block in self.multimodal_transformer_blocks:
-            # Convert to float32 at block 35 to prevent NaNs and infs
-            if count == 35:
-                if t != mx.float32:
-                    logger.debug(
-                        "Converting activations at block 35 to float32 to prevent NaNs and infs."
-                    )
-                latent_image_embeddings = latent_image_embeddings.astype(mx.float32)
-                token_level_text_embeddings = token_level_text_embeddings.astype(
-                    mx.float32
-                )
-                modulation_inputs = modulation_inputs.astype(mx.float32)
-            latent_image_embeddings, token_level_text_embeddings = block(
-                latent_image_embeddings,
-                token_level_text_embeddings,
-                modulation_inputs,
+        if self.config.pos_embed_type == PositionalEncoding.PreSDPARope:
+            positional_encodings = self.pre_sdpa_rope(
+                text_sequence_length=token_level_text_embeddings.shape[1],
+                latent_image_resolution=(
+                    latent_height // self.config.patch_size,
+                    latent_width // self.config.patch_size,
+                ),
             )
-            mx.eval(latent_image_embeddings)
-            mx.eval(token_level_text_embeddings)
-            if mx.isnan(latent_image_embeddings).any():
-                raise ValueError(
-                    f"NaN detected in latent_image_embeddings at block {count}"
+        else:
+            positional_encodings = None
+
+        # MultiModalTransformer layers
+        if self.config.depth_multimodal > 0:
+            for bidx, block in enumerate(self.multimodal_transformer_blocks):
+                # Upcast activations to float32 for layers that were diagnosed
+                # to be problematic in lower precision
+                if bidx in (self.config.upcast_multimodal_blocks or []):
+                    if t != mx.float32:
+                        logger.debug(
+                            "config.upcast_multimodal_blocks: "
+                            f"Upcasting activations at multimodal_block {bidx} to float32"
+                        )
+                    latent_image_embeddings = latent_image_embeddings.astype(mx.float32)
+                    token_level_text_embeddings = token_level_text_embeddings.astype(
+                        mx.float32
+                    )
+                    modulation_inputs = modulation_inputs.astype(mx.float32)
+                latent_image_embeddings, token_level_text_embeddings = block(
+                    latent_image_embeddings,
+                    token_level_text_embeddings,
+                    modulation_inputs,
+                    positional_encodings=positional_encodings,
                 )
-            if (
-                token_level_text_embeddings is not None
-                and mx.isnan(token_level_text_embeddings).any()
-            ):
-                raise ValueError(
-                    f"NaN detected in token_level_text_embeddings at block {count}"
+                mx.eval(latent_image_embeddings)
+                mx.eval(token_level_text_embeddings)
+                if mx.isnan(latent_image_embeddings).any():
+                    raise ValueError(
+                        f"NaN detected in latent_image_embeddings at block {bidx}"
+                    )
+                if (
+                    token_level_text_embeddings is not None
+                    and mx.isnan(token_level_text_embeddings).any()
+                ):
+                    raise ValueError(
+                        f"NaN detected in token_level_text_embeddings at block {bidx}"
+                    )
+                if bidx in (self.config.upcast_multimodal_blocks or []):
+                    logger.debug(
+                        f"Recasting to original dtype for multimodal_block index {bidx}"
+                    )
+                    latent_image_embeddings = latent_image_embeddings.astype(t)
+                    if token_level_text_embeddings is not None:
+                        token_level_text_embeddings = (
+                            token_level_text_embeddings.astype(t)
+                        )
+                    modulation_inputs = modulation_inputs.astype(t)
+
+        # UnifiedTransformerBlock layers
+        if self.config.depth_unified > 0:
+            latent_unified_embeddings = mx.concatenate(
+                (token_level_text_embeddings, latent_image_embeddings), axis=1
+            )
+
+            for bidx, block in enumerate(self.unified_transformer_blocks):
+                if bidx in (self.config.upcast_unified_blocks or []):
+                    if t != mx.float32:
+                        logger.debug(
+                            "config.upcast_unified_blocks: "
+                            f"Upcasting activations at unified_block {bidx} to float32"
+                        )
+                    latent_unified_embeddings = latent_unified_embeddings.astype(
+                        mx.float32
+                    )
+                    modulation_inputs = modulation_inputs.astype(mx.float32)
+                    positional_encodings = positional_encodings.astype(mx.float32)
+
+                latent_unified_embeddings = block(
+                    latent_unified_embeddings,
+                    modulation_inputs,
+                    positional_encodings=positional_encodings,
                 )
-            if count == 35:
-                latent_image_embeddings = latent_image_embeddings.astype(t)
-                if token_level_text_embeddings is not None:
-                    token_level_text_embeddings = token_level_text_embeddings.astype(t)
-                modulation_inputs = modulation_inputs.astype(t)
-            count += 1
+                if bidx in (self.config.upcast_unified_blocks or []):
+                    logger.debug(
+                        f"Recasting to original dtype for unified_block index {bidx}"
+                    )
+                    latent_unified_embeddings = latent_unified_embeddings.astype(t)
+                    modulation_inputs = modulation_inputs.astype(t)
+                    positional_encodings = positional_encodings.astype(t)
+
+            latent_image_embeddings = latent_unified_embeddings[
+                :, token_level_text_embeddings.shape[1] :, ...
+            ]
 
         # Final layer
         latent_image_embeddings = self.final_layer(
             latent_image_embeddings, modulation_inputs
         )
-        return unpatchify(
-            latent_image_embeddings,
-            patch_size=self.config.patch_size,
-            target_height=latent_height,
-            target_width=latent_width,
-            vae_latent_dim=self.config.vae_latent_dim,
-        )
+        if self.config.patchify_via_reshape:
+            latent_image_embeddings = self.x_embedder.unpack(
+                latent_image_embeddings, (latent_height, latent_width)
+            )
+        else:
+            latent_image_embeddings = unpatchify(
+                latent_image_embeddings,
+                patch_size=self.config.patch_size,
+                target_height=latent_height,
+                target_width=latent_width,
+                vae_latent_dim=self.config.vae_latent_dim,
+            )
+        return latent_image_embeddings
 
 
 class LatentImageAdapter(nn.Module):
@@ -139,15 +215,48 @@ class LatentImageAdapter(nn.Module):
 
     def __init__(self, config: MMDiTConfig):
         super().__init__()
+        self.config = config
+        in_dim = config.vae_latent_dim
+        kernel_size = stride = config.patch_size
+
+        if config.patchify_via_reshape:
+            in_dim *= config.patch_size**2
+            kernel_size = stride = 1
+
         self.proj = nn.Conv2d(
-            config.vae_latent_dim,
+            in_dim,
             config.hidden_size,
-            kernel_size=config.patch_size,
-            stride=config.patch_size,
+            kernel_size,
+            stride,
         )
 
     def __call__(self, x: mx.array) -> mx.array:
+        if self.config.patchify_via_reshape:
+            b, h_latent, w_latent, c = x.shape
+            p = self.config.patch_size
+            x = (
+                x.reshape(b, h_latent // p, p, w_latent // p, p, c)
+                .transpose(0, 1, 3, 5, 2, 4)
+                .reshape(b, h_latent // p, w_latent // p, -1)
+            )
+
         return self.proj(x)
+
+    def unpack(self, x: mx.array, latent_image_resolution: Tuple[int]) -> mx.array:
+        assert self.config.patchify_via_reshape
+
+        b, hw, _, c_packed = x.shape
+        p = self.config.patch_size
+        h = latent_image_resolution[0] // p
+        w = latent_image_resolution[1] // p
+        x = (
+            x.reshape(
+                b, h, w, -1, p, p
+            )  # (b, hw, 1, (c*ph*pw)) -> (b, h, w, c, ph, pw)
+            .transpose(0, 1, 4, 2, 5, 3)  # (b, h, w, c, ph, pw) -> (b, h, ph, w, pw, c)
+            .reshape(b, h * p, w * p, -1)  # (b, h, ph, w, pw, c) -> (b, h*ph, w*pw, c)
+        )
+        return x
 
 
 class LatentImagePositionalEmbedding(nn.Module):
@@ -178,7 +287,7 @@ class LatentImagePositionalEmbedding(nn.Module):
         return mx.repeat(w, repeats=b, axis=0)
 
 
-class PooledTextEmbeddingAdater(nn.Module):
+class PooledTextEmbeddingAdapter(nn.Module):
     def __init__(self, config: MMDiTConfig):
         super().__init__()
 
@@ -222,13 +331,25 @@ class TimestepAdapter(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, config: MMDiTConfig, skip_post_sdpa: bool = False):
+    def __init__(
+        self,
+        config: MMDiTConfig,
+        skip_post_sdpa: bool = False,
+        parallel_mlp: bool = False,
+        num_modulation_params: Optional[int] = None,
+    ):
         super().__init__()
-        self.norm1 = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.attn = Attention(config.hidden_size, config.depth)
-        self.norm2 = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-
+        self.config = config
+        self.parallel_mlp = parallel_mlp
         self.skip_post_sdpa = skip_post_sdpa
+        self.per_head_dim = config.hidden_size // config.num_heads
+
+        self.norm1 = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.attn = Attention(config.hidden_size, config.num_heads)
+        if not self.parallel_mlp:
+            # If parallel, reuse norm1 across attention and mlp
+            self.norm2 = LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+
         if skip_post_sdpa:
             self.attn.o_proj = nn.Identity()
         else:
@@ -238,7 +359,12 @@ class TransformerBlock(nn.Module):
                 activation_fn=nn.GELU(),
             )
 
-        self.num_modulation_params = 6 if not skip_post_sdpa else 2
+        if num_modulation_params is None:
+            num_modulation_params = 6
+            if skip_post_sdpa:
+                num_modulation_params = 2
+
+        self.num_modulation_params = num_modulation_params
         self.adaLN_modulation = nn.Sequential(
             nn.SiLU(),
             nn.Linear(
@@ -246,7 +372,14 @@ class TransformerBlock(nn.Module):
             ),
         )
 
-    def pre_sdpa(self, tensor: mx.array, modulation_inputs: mx.array):
+        if config.use_qk_norm:
+            self.qk_norm = QKNorm(config.hidden_size // config.num_heads)
+
+    def pre_sdpa(
+        self,
+        tensor: mx.array,
+        modulation_inputs: mx.array,
+    ) -> Dict[str, mx.array]:
         # Project Adaptive LayerNorm modulation parameters
         modulation_params = self.adaLN_modulation(modulation_inputs)
         modulation_params = mx.split(
@@ -257,22 +390,61 @@ class TransformerBlock(nn.Module):
         post_norm1_residual_scale = modulation_params[1]
 
         # LayerNorm and modulate before SDPA
-        pre_attn = affine_transform(
-            self.norm1(tensor),
-            shift=post_norm1_shift,
-            residual_scale=post_norm1_residual_scale,
+        try:
+            modulated_pre_attention = affine_transform(
+                self.norm1(tensor),
+                shift=post_norm1_shift,
+                residual_scale=post_norm1_residual_scale,
+            )
+        except Exception as e:
+            logger.error(
+                f"Error in pre_sdpa: {e}",
+                exc_info=True,
+            )
+            raise e
+
+        q = self.attn.q_proj(modulated_pre_attention)
+        k = self.attn.k_proj(modulated_pre_attention)
+        v = self.attn.v_proj(modulated_pre_attention)
+
+        batch = tensor.shape[0]
+
+        def rearrange_for_norm(t):
+            # Target data layout: (batch, head, seq_len, channel)
+            return t.reshape(
+                batch, -1, self.config.num_heads, self.per_head_dim
+            ).transpose(0, 2, 1, 3)
+
+        q = rearrange_for_norm(q)
+        k = rearrange_for_norm(k)
+        v = rearrange_for_norm(v)
+
+        if self.config.use_qk_norm:
+            q, k = self.qk_norm(q, k)
+
+        if self.config.depth_unified == 0:
+            q = q.transpose(0, 2, 1, 3).reshape(batch, -1, 1, self.config.hidden_size)
+            k = k.transpose(0, 2, 1, 3).reshape(batch, -1, 1, self.config.hidden_size)
+            v = v.transpose(0, 2, 1, 3).reshape(batch, -1, 1, self.config.hidden_size)
+
+        results = {"q": q, "k": k, "v": v}
+
+        results["modulated_pre_attention"] = modulated_pre_attention
+
+        assert len(modulation_params) in [2, 3, 6]
+        results.update(
+            {
+                "post_norm1_shift": post_norm1_shift,
+                "post_norm1_residual_scale": post_norm1_residual_scale,
+            }
         )
 
-        results = {
-            "q": self.attn.q_proj(pre_attn),
-            "k": self.attn.k_proj(pre_attn),
-            "v": self.attn.v_proj(pre_attn),
-        }
-
         if len(modulation_params) > 2:
+            results.update({"post_attn_scale": modulation_params[2]})
+
+        if len(modulation_params) > 3:
             results.update(
                 {
-                    "post_attn_scale": modulation_params[2],
                     "post_norm2_shift": modulation_params[3],
                     "post_norm2_residual_scale": modulation_params[4],
                     "post_mlp_scale": modulation_params[5],
@@ -285,20 +457,29 @@ class TransformerBlock(nn.Module):
         self,
         residual: mx.array,
         sdpa_output: mx.array,
-        post_attn_scale: mx.array,
-        post_norm2_shift: mx.array,
-        post_norm2_residual_scale: mx.array,
-        post_mlp_scale: mx.array,
+        modulated_pre_attention: mx.array,
+        post_attn_scale: Optional[mx.array] = None,
+        post_norm2_shift: Optional[mx.array] = None,
+        post_norm2_residual_scale: Optional[mx.array] = None,
+        post_mlp_scale: Optional[mx.array] = None,
         **kwargs,
     ):
-        residual = residual + self.attn.o_proj(sdpa_output) * post_attn_scale
-        return residual + post_mlp_scale * self.mlp(
-            affine_transform(
-                self.norm2(residual),
-                shift=post_norm2_shift,
-                residual_scale=post_norm2_residual_scale,
+        attention_out = self.attn.o_proj(sdpa_output)
+        if self.parallel_mlp:
+            # Reuse the modulation parameters and self.norm1 across attn and mlp
+            mlp_out = self.mlp(modulated_pre_attention)
+            return residual + post_attn_scale * (attention_out + mlp_out)
+        else:
+            residual = residual + attention_out * post_attn_scale
+            # Apply separate modulation parameters and LayerNorm across attn and mlp
+            mlp_out = self.mlp(
+                affine_transform(
+                    self.norm2(residual),
+                    shift=post_norm2_shift,
+                    residual_scale=post_norm2_residual_scale,
+                )
             )
-        )
+            return residual + post_mlp_scale * mlp_out
 
     def __call__(self):
         raise NotImplementedError("This module is not intended to be used directly")
@@ -316,13 +497,14 @@ class MultiModalTransformerBlock(nn.Module):
         self.sdpa = partial(sdpa_impl)
 
         self.config = config
-        self.per_head_dim = config.hidden_size // config.depth
+        self.per_head_dim = config.hidden_size // config.num_heads
 
     def __call__(
         self,
         latent_image_embeddings: mx.array,  # latent image embeddings
         token_level_text_embeddings: mx.array,  # token-level text embeddings
         modulation_inputs: mx.array,  # pooled text embeddings + timestep embeddings
+        positional_encodings: mx.array = None,  # positional encodings for rope
     ):
         # Prepare multi-modal SDPA inputs
         image_intermediates = self.image_transformer_block.pre_sdpa(
@@ -337,28 +519,56 @@ class MultiModalTransformerBlock(nn.Module):
 
         def rearrange_for_sdpa(t):
             # Target data layout: (batch, head, seq_len, channel)
-            return t.reshape(batch, -1, self.config.depth, self.per_head_dim).transpose(
-                0, 2, 1, 3
+            return t.reshape(
+                batch, -1, self.config.num_heads, self.per_head_dim
+            ).transpose(0, 2, 1, 3)
+
+        if self.config.depth_unified > 0:
+            multimodal_sdpa_inputs = {
+                "q": mx.concatenate(
+                    [text_intermediates["q"], image_intermediates["q"]], axis=2
+                ),
+                "k": mx.concatenate(
+                    [text_intermediates["k"], image_intermediates["k"]], axis=2
+                ),
+                "v": mx.concatenate(
+                    [text_intermediates["v"], image_intermediates["v"]], axis=2
+                ),
+                "scale": 1.0 / np.sqrt(self.per_head_dim),
+            }
+        else:
+            multimodal_sdpa_inputs = {
+                "q": rearrange_for_sdpa(
+                    mx.concatenate(
+                        [image_intermediates["q"], text_intermediates["q"]], axis=1
+                    )
+                ),
+                "k": rearrange_for_sdpa(
+                    mx.concatenate(
+                        [image_intermediates["k"], text_intermediates["k"]], axis=1
+                    )
+                ),
+                "v": rearrange_for_sdpa(
+                    mx.concatenate(
+                        [image_intermediates["v"], text_intermediates["v"]], axis=1
+                    )
+                ),
+                "scale": 1.0 / np.sqrt(self.per_head_dim),
+            }
+
+        if self.config.pos_embed_type == PositionalEncoding.PreSDPARope:
+            assert positional_encodings is not None
+            multimodal_sdpa_inputs["q"] = RoPE.apply(
+                multimodal_sdpa_inputs["q"], positional_encodings
+            )
+            multimodal_sdpa_inputs["k"] = RoPE.apply(
+                multimodal_sdpa_inputs["k"], positional_encodings
             )
 
-        multimodal_sdpa_inputs = {
-            "q": rearrange_for_sdpa(
-                mx.concatenate(
-                    [image_intermediates["q"], text_intermediates["q"]], axis=1
-                )
-            ),
-            "k": rearrange_for_sdpa(
-                mx.concatenate(
-                    [image_intermediates["k"], text_intermediates["k"]], axis=1
-                )
-            ),
-            "v": rearrange_for_sdpa(
-                mx.concatenate(
-                    [image_intermediates["v"], text_intermediates["v"]], axis=1
-                )
-            ),
-            "scale": 1.0 / np.sqrt(self.per_head_dim),
-        }
+        if self.config.low_memory_mode:
+            multimodal_sdpa_inputs[
+                "memory_efficient_threshold"
+            ] = SDPA_FLASH_ATTN_THRESHOLD
 
         # Compute multi-modal SDPA
         sdpa_outputs = (
@@ -371,8 +581,12 @@ class MultiModalTransformerBlock(nn.Module):
         img_seq_len = latent_image_embeddings.shape[1]
         txt_seq_len = token_level_text_embeddings.shape[1]
 
-        image_sdpa_output = sdpa_outputs[:, :img_seq_len, :, :]
-        text_sdpa_output = sdpa_outputs[:, -txt_seq_len:, :, :]
+        if self.config.depth_unified > 0:
+            text_sdpa_output = sdpa_outputs[:, :txt_seq_len, :, :]
+            image_sdpa_output = sdpa_outputs[:, txt_seq_len:, :, :]
+        else:
+            image_sdpa_output = sdpa_outputs[:, :img_seq_len, :, :]
+            text_sdpa_output = sdpa_outputs[:, -txt_seq_len:, :, :]
 
         # Post-SDPA layers
         latent_image_embeddings = self.image_transformer_block.post_sdpa(
@@ -391,6 +605,93 @@ class MultiModalTransformerBlock(nn.Module):
             )
 
         return latent_image_embeddings, token_level_text_embeddings
+
+
+class UnifiedTransformerBlock(nn.Module):
+    def __init__(self, config: MMDiTConfig):
+        super().__init__()
+        self.transformer_block = TransformerBlock(
+            config,
+            num_modulation_params=3 if config.parallel_mlp_for_unified_blocks else 6,
+            parallel_mlp=config.parallel_mlp_for_unified_blocks,
+        )
+
+        sdpa_impl = mx.fast.scaled_dot_product_attention
+        self.sdpa = partial(sdpa_impl)
+
+        self.config = config
+        self.per_head_dim = config.hidden_size // config.num_heads
+
+    def __call__(
+        self,
+        latent_unified_embeddings: mx.array,  # latent image embeddings
+        modulation_inputs: mx.array,  # pooled text embeddings + timestep embeddings
+        positional_encodings: mx.array = None,  # positional encodings for rope
+    ):
+        # Prepare multi-modal SDPA inputs
+        intermediates = self.transformer_block.pre_sdpa(
+            latent_unified_embeddings, modulation_inputs=modulation_inputs
+        )
+
+        batch = latent_unified_embeddings.shape[0]
+
+        def rearrange_for_sdpa(t):
+            # Target data layout: (batch, head, seq_len, channel)
+            return t.reshape(
+                batch, -1, self.config.num_heads, self.per_head_dim
+            ).transpose(0, 2, 1, 3)
+
+        multimodal_sdpa_inputs = {
+            "q": intermediates["q"],
+            "k": intermediates["k"],
+            "v": intermediates["v"],
+            "scale": 1.0 / np.sqrt(self.per_head_dim),
+        }
+
+        if self.config.pos_embed_type == PositionalEncoding.PreSDPARope:
+            assert positional_encodings is not None
+            multimodal_sdpa_inputs["q"] = RoPE.apply(
+                multimodal_sdpa_inputs["q"], positional_encodings
+            )
+            multimodal_sdpa_inputs["k"] = RoPE.apply(
+                multimodal_sdpa_inputs["k"], positional_encodings
+            )
+
+        if self.config.low_memory_mode:
+            multimodal_sdpa_inputs[
+                "memory_efficient_threshold"
+            ] = SDPA_FLASH_ATTN_THRESHOLD
+
+        # Compute multi-modal SDPA
+        sdpa_outputs = (
+            self.sdpa(**multimodal_sdpa_inputs)
+            .transpose(0, 2, 1, 3)
+            .reshape(batch, -1, 1, self.config.hidden_size)
+        )
+
+        # o_proj and mlp.fc2 uses the same bias, remove mlp.fc2 bias
+        self.transformer_block.mlp.fc2.bias = self.transformer_block.mlp.fc2.bias * 0.0
+
+        # Post-SDPA layers
+        latent_unified_embeddings = self.transformer_block.post_sdpa(
+            residual=latent_unified_embeddings,
+            sdpa_output=sdpa_outputs,
+            **intermediates,
+        )
+
+        return latent_unified_embeddings
+
+
+class QKNorm(nn.Module):
+    def __init__(self, head_dim):
+        super().__init__()
+        self.q_norm = nn.RMSNorm(head_dim, eps=1e-6)
+        self.k_norm = nn.RMSNorm(head_dim, eps=1e-6)
+
+    def __call__(self, q: mx.array, k: mx.array) -> Tuple[mx.array, mx.array]:
+        q = self.q_norm(q.astype(mx.float32))
+        k = self.k_norm(k.astype(mx.float32))
+        return q, k
 
 
 class FinalLayer(nn.Module):
@@ -443,7 +744,7 @@ class Attention(nn.Module):
         self.kv_proj_embed_dim = self.per_head_dim * n_heads
 
         # Note: key bias is redundant due to softmax invariance
-        self.k_proj = nn.Linear(embed_dim, self.kv_proj_embed_dim, bias=False)
+        self.k_proj = nn.Linear(embed_dim, self.kv_proj_embed_dim)
         self.q_proj = nn.Linear(embed_dim, embed_dim)
         self.v_proj = nn.Linear(embed_dim, self.kv_proj_embed_dim)
         self.o_proj = nn.Linear(embed_dim, embed_dim)
@@ -472,6 +773,99 @@ class LayerNorm(nn.Module):
             raise ValueError(f"Input tensor must have rank 4, got {input_rank}")
 
         return mx.fast.layer_norm(inputs, weight=None, bias=None, eps=self.eps)
+
+
+class RoPE(nn.Module):
+    """Custom RoPE implementation for FLUX"""
+
+    def __init__(self, theta: int, axes_dim: List[int]) -> None:
+        super().__init__()
+        self.theta = theta
+        self.axes_dim = axes_dim
+
+        # Cache for consecutive identical calls
+        self.rope_embeddings = None
+        self.last_image_resolution = None
+        self.last_text_sequence_length = None
+
+    def _get_positions(
+        self, latent_image_resolution: Tuple[int], text_sequence_length: int
+    ) -> mx.array:
+        h, w = latent_image_resolution
+        image_positions = mx.stack(
+            [
+                mx.zeros((h, w)),
+                mx.repeat(mx.arange(h)[:, None], w, axis=1),
+                mx.repeat(mx.arange(w)[None, :], h, axis=0),
+            ],
+            axis=-1,
+        ).flatten(
+            0, 1
+        )  # (h * w, 3)
+
+        text_and_image_positions = mx.concatenate(
+            [
+                mx.zeros((text_sequence_length, 3)),
+                image_positions,
+            ],
+            axis=0,
+        )[
+            None
+        ]  # (text_sequence_length + h * w, 3)
+
+        return text_and_image_positions
+
+    def rope(self, positions: mx.array, dim: int, theta: int = 10_000) -> mx.array:
+        def _rope_per_dim(positions, dim, theta):
+            scale = mx.arange(0, dim, 2, dtype=mx.float32) / dim
+            omega = 1.0 / (theta**scale)
+            out = (
+                positions[..., None] * omega[None, None, :]
+            )  # mx.einsum("bn,d->bnd", positions, omega)
+            return mx.stack(
+                [mx.cos(out), -mx.sin(out), mx.sin(out), mx.cos(out)], axis=-1
+            ).reshape(*positions.shape, dim // 2, 2, 2)
+
+        return mx.concatenate(
+            [
+                _rope_per_dim(
+                    positions=positions[..., i], dim=self.axes_dim[i], theta=self.theta
+                )
+                for i in range(len(self.axes_dim))
+            ],
+            axis=-3,
+        ).astype(positions.dtype)
+
+    def __call__(
+        self, latent_image_resolution: Tuple[int], text_sequence_length: int
+    ) -> mx.array:
+        identical_to_last_call = (
+            latent_image_resolution == self.last_image_resolution
+            and text_sequence_length == self.last_text_sequence_length
+        )
+
+        if self.rope_embeddings is None or not identical_to_last_call:
+            self.last_image_resolution = latent_image_resolution
+            self.last_text_sequence_length = text_sequence_length
+            positions = self._get_positions(
+                latent_image_resolution, text_sequence_length
+            )
+            self.rope_embeddings = self.rope(positions, self.theta)
+            self.rope_embeddings = mx.expand_dims(self.rope_embeddings, axis=1)
+        else:
+            logger.debug("Returning cached RoPE embeddings")
+
+        return self.rope_embeddings
+
+    @staticmethod
+    def apply(q_or_k: mx.array, rope: mx.array) -> mx.array:
+        in_dtype = q_or_k.dtype
+        q_or_k = q_or_k.astype(mx.float32).reshape(*q_or_k.shape[:-1], -1, 1, 2)
+        return (
+            (rope[..., 0] * q_or_k[..., 0] + rope[..., 1] * q_or_k[..., 1])
+            .astype(in_dtype)
+            .flatten(-2)
+        )
 
 
 def affine_transform(
