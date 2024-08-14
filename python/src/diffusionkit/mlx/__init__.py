@@ -67,53 +67,68 @@ class DiffusionPipeline:
         self.dtype = self.float16_dtype if w16 else mx.float32
         self.activation_dtype = self.float16_dtype if a16 else mx.float32
         self.use_t5 = use_t5
-        mmdit_ckpt = MMDIT_CKPT[model_version]
+        self.mmdit_ckpt = MMDIT_CKPT[model_version]
         self.low_memory_mode = low_memory_mode
-        self.mmdit = load_mmdit(
-            float16=w16,
-            key=mmdit_ckpt,
-            model_key=model_version,
-            low_memory_mode=low_memory_mode,
-        )
+        self.model = model
+        self.model_version = model_version
         self.sampler = ModelSamplingDiscreteFlow(shift=shift)
-        self.decoder = load_vae_decoder(float16=w16, key=mmdit_ckpt)
-        self.encoder = load_vae_encoder(float16=False, key=mmdit_ckpt)
         self.latent_format = SD3LatentFormat()
+        self.use_clip_g = True
+        self.check_and_load_models()
 
-        self.clip_l = load_text_encoder(
-            model,
-            w16,
-            model_key="clip_l",
+    def load_mmdit(self):
+        self.mmdit = load_mmdit(
+            float16=True if self.dtype == self.float16_dtype else False,
+            key=self.mmdit_ckpt,
+            model_key=self.model_version,
+            low_memory_mode=self.low_memory_mode,
         )
-        self.tokenizer_l = load_tokenizer(
-            model,
-            merges_key="tokenizer_l_merges",
-            vocab_key="tokenizer_l_vocab",
-            pad_with_eos=True,
-        )
-        self.clip_g = load_text_encoder(
-            model,
-            w16,
-            model_key="clip_g",
-        )
-        self.tokenizer_g = load_tokenizer(
-            model,
-            merges_key="tokenizer_g_merges",
-            vocab_key="tokenizer_g_vocab",
-            pad_with_eos=False,
-        )
-        self.t5_encoder = None
-        self.t5_tokenizer = None
-        if self.use_t5:
+
+    def check_and_load_models(self):
+        if not hasattr(self, "mmdit"):
+            self.load_mmdit()
+        if not hasattr(self, "decoder"):
+            self.decoder = load_vae_decoder(
+                float16=True if self.dtype == self.float16_dtype else False,
+                key=self.mmdit_ckpt,
+            )
+        if not hasattr(self, "encoder"):
+            self.encoder = load_vae_encoder(float16=False, key=self.mmdit_ckpt)
+
+        if not hasattr(self, "clip_l"):
+            self.clip_l = load_text_encoder(
+                self.model,
+                float16=True if self.dtype == self.float16_dtype else False,
+                model_key="clip_l",
+            )
+            self.tokenizer_l = load_tokenizer(
+                self.model,
+                merges_key="tokenizer_l_merges",
+                vocab_key="tokenizer_l_vocab",
+                pad_with_eos=True,
+            )
+        if self.use_clip_g and not hasattr(self, "clip_g"):
+            self.clip_g = load_text_encoder(
+                self.model,
+                float16=True if self.dtype == self.float16_dtype else False,
+                model_key="clip_g",
+            )
+            self.tokenizer_g = load_tokenizer(
+                self.model,
+                merges_key="tokenizer_g_merges",
+                vocab_key="tokenizer_g_vocab",
+                pad_with_eos=False,
+            )
+        if self.use_t5 and not hasattr(self, "t5_encoder"):
             self.set_up_t5()
 
     def set_up_t5(self):
-        if self.t5_encoder is None:
+        if not hasattr(self, "t5_encoder") or self.t5_encoder is None:
             self.t5_encoder = load_t5_encoder(
                 float16=True if self.dtype == self.float16_dtype else False,
                 low_memory_mode=self.low_memory_mode,
             )
-        if self.t5_tokenizer is None:
+        if not hasattr(self, "t5_tokenizer") or self.t5_tokenizer is None:
             self.t5_tokenizer = load_t5_tokenizer()
         self.use_t5 = True
 
@@ -266,6 +281,7 @@ class DiffusionPipeline:
         image_path: Optional[str] = None,
         denoise: float = 1.0,
     ):
+        self.check_and_load_models()
         # Start timing
         start_time = time.time()
 
@@ -405,10 +421,9 @@ class DiffusionPipeline:
             )
             logger.info(f"Denoising time: {log['denoising']['time']}s")
 
-        # unload MMDIT and Sampler models after obtaining latents in low memory mode
+        # unload MMDIT model after obtaining latents in low memory mode
         if self.low_memory_mode:
             del self.mmdit
-            del self.sampler
             gc.collect()
 
         logger.debug(f"Latents dtype before casting: {latents.dtype}")
@@ -566,30 +581,21 @@ class FluxPipeline(DiffusionPipeline):
         model_io._FLOAT16 = self.float16_dtype
         self.dtype = self.float16_dtype if w16 else mx.float32
         self.activation_dtype = self.float16_dtype if a16 else mx.float32
-        mmdit_ckpt = MMDIT_CKPT[model_version]
+        self.mmdit_ckpt = MMDIT_CKPT[model_version]
         self.low_memory_mode = low_memory_mode
-        self.mmdit = load_flux(float16=w16, low_memory_mode=low_memory_mode)
+        self.model = model
+        self.model_version = model_version
         self.sampler = FluxSampler(shift=shift)
-        self.decoder = load_vae_decoder(float16=w16, key=mmdit_ckpt)
-        self.encoder = load_vae_encoder(float16=False, key=mmdit_ckpt)
         self.latent_format = FluxLatentFormat()
         self.use_t5 = True
+        self.use_clip_g = False
+        self.check_and_load_models()
 
-        self.clip_l = load_text_encoder(
-            model,
-            w16,
-            model_key="clip_l",
+    def load_mmdit(self):
+        self.mmdit = load_flux(
+            float16=True if self.dtype == self.float16_dtype else False,
+            low_memory_mode=self.low_memory_mode,
         )
-        self.tokenizer_l = load_tokenizer(
-            model,
-            merges_key="tokenizer_l_merges",
-            vocab_key="tokenizer_l_vocab",
-            pad_with_eos=True,
-        )
-        self.t5_encoder = None
-        self.t5_tokenizer = None
-        if self.use_t5:
-            self.set_up_t5()
 
     def encode_text(
         self,
