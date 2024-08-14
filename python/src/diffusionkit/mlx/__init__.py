@@ -227,7 +227,7 @@ class DiffusionPipeline:
             x_T = self.latent_format.process_in(x_T)
         noise = self.get_noise(seed, x_T)
         sigmas = self.get_sigmas(self.sampler, num_steps)
-        sigmas = sigmas[int(num_steps * (1 - denoise)):]
+        sigmas = sigmas[int(num_steps * (1 - denoise)) :]
         extra_args = {
             "conditioning": conditioning,
             "cfg_weight": cfg_weight,
@@ -633,7 +633,9 @@ class CFGDenoiser(nn.Module):
         mmdit_input = {
             "latent_image_embeddings": x_t_mmdit,
             "token_level_text_embeddings": mx.expand_dims(conditioning, 2),
-            "pooled_text_embeddings": mx.expand_dims(mx.expand_dims(pooled_conditioning, 1), 1),
+            "pooled_text_embeddings": mx.expand_dims(
+                mx.expand_dims(pooled_conditioning, 1), 1
+            ),
             "timestep": timestep,
         }
 
@@ -693,10 +695,7 @@ def sample_euler(model: CFGDenoiser, x, sigmas, extra_args=None):
     s_in = mx.ones([x.shape[0]])
     from tqdm import trange
 
-<<<<<<< HEAD
-=======
     sigmas = mx.array([1.0, 0.75, 0.5, 0.25, 0.0], mx.bfloat16)  # FIXME
->>>>>>> bb6dcc2d (TODO: Test memory reduction and correctness)
     t = trange(len(sigmas) - 1)
 
     model.cache_modulation_params(extra_args["pooled_conditioning"], sigmas)
