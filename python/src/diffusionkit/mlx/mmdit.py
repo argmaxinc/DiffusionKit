@@ -3,12 +3,10 @@
 # Copyright (C) 2024 Argmax, Inc. All Rights Reserved.
 #
 
-import gc
 from functools import partial
 
 import mlx.core as mx
 import mlx.nn as nn
-import mlx.utils as utils
 import numpy as np
 from argmaxtools.utils import get_logger
 from beartype.typing import Dict, List, Optional, Tuple
@@ -77,13 +75,17 @@ class MMDiT(nn.Module):
         by offloading all adaLN_modulation parameters
         """
         y_embed = self.y_embedder(pooled_text_embeddings)
+        batch_size = pooled_text_embeddings.shape[0]
 
         offload_size = 0
         to_offload = []
 
         for timestep in timesteps:
             final_timestep = timestep.item() == timesteps[-1].item()
-            modulation_inputs = y_embed + self.t_embedder(timestep[None] * 1000.0)
+            timestep_key = timestep.item()
+            modulation_inputs = y_embed[:, None, None, :] + self.t_embedder(
+                mx.repeat(timestep[None], batch_size, axis=0)
+            )
 
             for block in self.multimodal_transformer_blocks:
                 if not hasattr(block.image_transformer_block, "_modulation_params"):
@@ -91,21 +93,13 @@ class MMDiT(nn.Module):
                     block.text_transformer_block._modulation_params = dict()
 
                 block.image_transformer_block._modulation_params[
-                    (timestep * 1000).item()
+                    timestep_key
                 ] = block.image_transformer_block.adaLN_modulation(modulation_inputs)
                 block.text_transformer_block._modulation_params[
-                    (timestep * 1000).item()
+                    timestep_key
                 ] = block.text_transformer_block.adaLN_modulation(modulation_inputs)
-                mx.eval(
-                    block.image_transformer_block._modulation_params[
-                        (timestep * 1000).item()
-                    ]
-                )
-                mx.eval(
-                    block.text_transformer_block._modulation_params[
-                        (timestep * 1000).item()
-                    ]
-                )
+                mx.eval(block.image_transformer_block._modulation_params[timestep_key])
+                mx.eval(block.text_transformer_block._modulation_params[timestep_key])
 
                 if final_timestep:
                     offload_size += (
@@ -131,33 +125,34 @@ class MMDiT(nn.Module):
                         ]
                     )
 
-            for block in self.unified_transformer_blocks:
-                if not hasattr(block.transformer_block, "_modulation_params"):
-                    block.transformer_block._modulation_params = dict()
-                block.transformer_block._modulation_params[
-                    (timestep * 1000).item()
-                ] = block.transformer_block.adaLN_modulation(modulation_inputs)
-                mx.eval(
-                    block.transformer_block._modulation_params[(timestep * 1000).item()]
-                )
+            if self.config.depth_unified > 0:
+                for block in self.unified_transformer_blocks:
+                    if not hasattr(block.transformer_block, "_modulation_params"):
+                        block.transformer_block._modulation_params = dict()
+                    block.transformer_block._modulation_params[
+                        timestep_key
+                    ] = block.transformer_block.adaLN_modulation(modulation_inputs)
+                    mx.eval(block.transformer_block._modulation_params[timestep_key])
 
-                if final_timestep:
-                    offload_size += (
-                        block.transformer_block.adaLN_modulation.layers[1].weight.size
-                        * block.transformer_block.adaLN_modulation.layers[
-                            1
-                        ].weight.dtype.size
-                    )
-                    to_offload.extend(
-                        [block.transformer_block.adaLN_modulation.layers[1]]
-                    )
+                    if final_timestep:
+                        offload_size += (
+                            block.transformer_block.adaLN_modulation.layers[
+                                1
+                            ].weight.size
+                            * block.transformer_block.adaLN_modulation.layers[
+                                1
+                            ].weight.dtype.size
+                        )
+                        to_offload.extend(
+                            [block.transformer_block.adaLN_modulation.layers[1]]
+                        )
 
             if not hasattr(self.final_layer, "_modulation_params"):
                 self.final_layer._modulation_params = dict()
             self.final_layer._modulation_params[
-                (timestep * 1000).item()
+                timestep_key
             ] = self.final_layer.adaLN_modulation(modulation_inputs)
-            mx.eval(self.final_layer._modulation_params[(timestep * 1000).item()])
+            mx.eval(self.final_layer._modulation_params[timestep_key])
 
             if final_timestep:
                 offload_size += (
@@ -246,6 +241,7 @@ class MMDiT(nn.Module):
             latent_image_embeddings,
             timestep,
         )
+
         if self.config.patchify_via_reshape:
             latent_image_embeddings = self.x_embedder.unpack(
                 latent_image_embeddings, (latent_height, latent_width)
@@ -437,7 +433,10 @@ class TransformerBlock(nn.Module):
         tensor: mx.array,
         timestep: mx.array,
     ) -> Dict[str, mx.array]:
+        if timestep.size > 1:
+            timestep = timestep[0]
         modulation_params = self._modulation_params[timestep.item()]
+
         modulation_params = mx.split(
             modulation_params, self.num_modulation_params, axis=-1
         )
@@ -771,6 +770,8 @@ class FinalLayer(nn.Module):
         latent_image_embeddings: mx.array,
         timestep: mx.array,
     ) -> mx.array:
+        if timestep.size > 1:
+            timestep = timestep[0]
         modulation_params = self._modulation_params[timestep.item()]
 
         shift, residual_scale = mx.split(modulation_params, 2, axis=-1)

@@ -495,7 +495,7 @@ class DiffusionPipeline:
         # Make sure image shape is divisible by 64
         W, H = (dim - dim % 64 for dim in (img.width, img.height))
         if W != img.width or H != img.height:
-            print(
+            logger.warning(
                 f"Warning: image shape is not divisible by 64, downsampling to {W}x{H}"
             )
             img = img.resize((W, H), Image.LANCZOS)  # use desired downsampling filter
@@ -629,13 +629,21 @@ class CFGDenoiser(nn.Module):
         self.model = model
 
     def cache_modulation_params(self, pooled_text_embeddings, sigmas):
-        self.model.mmdit.cache_modulation_params(pooled_text_embeddings, sigmas)
+        self.model.mmdit.cache_modulation_params(
+            pooled_text_embeddings, sigmas.astype(self.model.activation_dtype)
+        )
 
     def clear_cache(self):
         self.model.mmdit.clear_modulation_params_cache()
 
     def __call__(
-        self, x_t, t, conditioning, cfg_weight: float = 7.5, pooled_conditioning=None
+        self,
+        x_t,
+        timestep,
+        sigma,
+        conditioning,
+        cfg_weight: float = 7.5,
+        pooled_conditioning=None,
     ):
         if cfg_weight <= 0:
             logger.debug("CFG Weight disabled")
@@ -644,20 +652,14 @@ class CFGDenoiser(nn.Module):
             x_t_mmdit = mx.concatenate([x_t] * 2, axis=0).astype(
                 self.model.activation_dtype
             )
-        t_mmdit = mx.broadcast_to(t, [len(x_t_mmdit)])
-        timestep = self.model.sampler.timestep(t_mmdit).astype(
-            self.model.activation_dtype
-        )
         mmdit_input = {
             "latent_image_embeddings": x_t_mmdit,
             "token_level_text_embeddings": mx.expand_dims(conditioning, 2),
-            "timestep": timestep,
+            "timestep": mx.broadcast_to(timestep, [len(x_t_mmdit)]),
         }
 
         mmdit_output = self.model.mmdit(**mmdit_input)
-        eps_pred = self.model.sampler.calculate_denoised(
-            t_mmdit, mmdit_output, x_t_mmdit
-        )
+        eps_pred = self.model.sampler.calculate_denoised(sigma, mmdit_output, x_t_mmdit)
         if cfg_weight <= 0:
             return eps_pred
         else:
@@ -707,21 +709,22 @@ def to_d(x, sigma, denoised):
 def sample_euler(model: CFGDenoiser, x, sigmas, extra_args=None):
     """Implements Algorithm 2 (Euler steps) from Karras et al. (2022)."""
     extra_args = {} if extra_args is None else extra_args
-    s_in = mx.ones([x.shape[0]])
+
     from tqdm import trange
 
-    sigmas = mx.array([1.0, 0.75, 0.5, 0.25, 0.0], mx.bfloat16)  # FIXME
     t = trange(len(sigmas) - 1)
 
-    model.cache_modulation_params(extra_args.pop("pooled_conditioning"), sigmas)
+    timesteps = model.model.sampler.timestep(sigmas).astype(
+        model.model.activation_dtype
+    )
+    model.cache_modulation_params(extra_args.pop("pooled_conditioning"), timesteps)
 
     iter_time = []
     for i in t:
         start_time = t.format_dict["elapsed"]
-        sigma_hat = sigmas[i]
-        denoised = model(x, sigma_hat * s_in, **extra_args)
-        d = to_d(x, sigma_hat, denoised)
-        dt = sigmas[i + 1] - sigma_hat
+        denoised = model(x, timesteps[i], sigmas[i], **extra_args)
+        d = to_d(x, sigmas[i], denoised)
+        dt = sigmas[i + 1] - sigmas[i]
         # Euler method
         x = x + d * dt
         mx.eval(x)
