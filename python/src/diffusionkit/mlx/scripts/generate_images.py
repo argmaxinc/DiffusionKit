@@ -112,9 +112,10 @@ def cli():
         args.cfg = 0.0
 
     if args.benchmark_mode:
-        if args.low_memory_mode:
-            logger.warning("Benchmark mode is enabled, disabling low memory mode.")
-        args.low_memory_mode = False
+        raise NotImplementedError
+        # if args.low_memory_mode:
+        #     logger.warning("Benchmark mode is enabled, disabling low memory mode.")
+        # args.low_memory_mode = False
 
     if args.denoise < 0.0 or args.denoise > 1.0:
         raise ValueError("Denoising factor must be between 0.0 and 1.0")
