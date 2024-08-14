@@ -3,12 +3,12 @@
 # Copyright (C) 2024 Argmax, Inc. All Rights Reserved.
 #
 
-from functools import partial
 import gc
+from functools import partial
 
 import mlx.core as mx
-import mlx.utils as utils
 import mlx.nn as nn
+import mlx.utils as utils
 import numpy as np
 from argmaxtools.utils import get_logger
 from beartype.typing import Dict, List, Optional, Tuple
@@ -68,11 +68,13 @@ class MMDiT(nn.Module):
 
         self.final_layer = FinalLayer(config)
 
-    def cache_modulation_params(self,
-                                pooled_text_embeddings: mx.array,
-                                timesteps: mx.array,
-                                ):
-        """ Compute modulation parameters ahead of time to reduce peak memory load during MMDiT inference.
+    def cache_modulation_params(
+        self,
+        pooled_text_embeddings: mx.array,
+        timesteps: mx.array,
+    ):
+        """Compute modulation parameters ahead of time to reduce peak memory load during MMDiT inference
+        by offloading all adaLN_modulation parameters
         """
         y_embed = self.y_embedder(pooled_text_embeddings)
 
@@ -81,78 +83,111 @@ class MMDiT(nn.Module):
 
         for timestep in timesteps:
             final_timestep = timestep.item() == timesteps[-1].item()
-            modulation_inputs = y_embed + self.t_embedder(timestep[None] * 1000.)
+            modulation_inputs = y_embed + self.t_embedder(timestep[None] * 1000.0)
 
             for block in self.multimodal_transformer_blocks:
                 if not hasattr(block.image_transformer_block, "_modulation_params"):
                     block.image_transformer_block._modulation_params = dict()
                     block.text_transformer_block._modulation_params = dict()
 
-                block.image_transformer_block._modulation_params[(timestep * 1000).item()] = \
-                    block.image_transformer_block.adaLN_modulation(modulation_inputs)
-                block.text_transformer_block._modulation_params[(timestep * 1000).item()] = \
-                    block.text_transformer_block.adaLN_modulation(modulation_inputs)
-                mx.eval(block.image_transformer_block._modulation_params[(timestep * 1000).item()])
-                mx.eval(block.text_transformer_block._modulation_params[(timestep * 1000).item()])
+                block.image_transformer_block._modulation_params[
+                    (timestep * 1000).item()
+                ] = block.image_transformer_block.adaLN_modulation(modulation_inputs)
+                block.text_transformer_block._modulation_params[
+                    (timestep * 1000).item()
+                ] = block.text_transformer_block.adaLN_modulation(modulation_inputs)
+                mx.eval(
+                    block.image_transformer_block._modulation_params[
+                        (timestep * 1000).item()
+                    ]
+                )
+                mx.eval(
+                    block.text_transformer_block._modulation_params[
+                        (timestep * 1000).item()
+                    ]
+                )
 
                 if final_timestep:
-                    offload_size += block.image_transformer_block.adaLN_modulation.layers[1].weight.size * \
-                        block.image_transformer_block.adaLN_modulation.layers[1].weight.dtype.size
-                    offload_size += block.text_transformer_block.adaLN_modulation.layers[1].weight.size * \
-                        block.text_transformer_block.adaLN_modulation.layers[1].weight.dtype.size
-                    to_offload.extend([
-                        block.image_transformer_block.adaLN_modulation.layers[1],
-                        block.text_transformer_block.adaLN_modulation.layers[1]])
+                    offload_size += (
+                        block.image_transformer_block.adaLN_modulation.layers[
+                            1
+                        ].weight.size
+                        * block.image_transformer_block.adaLN_modulation.layers[
+                            1
+                        ].weight.dtype.size
+                    )
+                    offload_size += (
+                        block.text_transformer_block.adaLN_modulation.layers[
+                            1
+                        ].weight.size
+                        * block.text_transformer_block.adaLN_modulation.layers[
+                            1
+                        ].weight.dtype.size
+                    )
+                    to_offload.extend(
+                        [
+                            block.image_transformer_block.adaLN_modulation.layers[1],
+                            block.text_transformer_block.adaLN_modulation.layers[1],
+                        ]
+                    )
 
             for block in self.unified_transformer_blocks:
                 if not hasattr(block.transformer_block, "_modulation_params"):
                     block.transformer_block._modulation_params = dict()
-                block.transformer_block._modulation_params[(timestep * 1000).item()] = \
-                    block.transformer_block.adaLN_modulation(modulation_inputs)
-                mx.eval(block.transformer_block._modulation_params[(timestep * 1000).item()])
+                block.transformer_block._modulation_params[
+                    (timestep * 1000).item()
+                ] = block.transformer_block.adaLN_modulation(modulation_inputs)
+                mx.eval(
+                    block.transformer_block._modulation_params[(timestep * 1000).item()]
+                )
 
                 if final_timestep:
-                    offload_size += block.transformer_block.adaLN_modulation.layers[1].weight.size * \
-                        block.transformer_block.adaLN_modulation.layers[1].weight.dtype.size
-                    to_offload.extend([block.transformer_block.adaLN_modulation.layers[1]])
+                    offload_size += (
+                        block.transformer_block.adaLN_modulation.layers[1].weight.size
+                        * block.transformer_block.adaLN_modulation.layers[
+                            1
+                        ].weight.dtype.size
+                    )
+                    to_offload.extend(
+                        [block.transformer_block.adaLN_modulation.layers[1]]
+                    )
 
             if not hasattr(self.final_layer, "_modulation_params"):
                 self.final_layer._modulation_params = dict()
-            self.final_layer._modulation_params[(timestep * 1000).item()] = \
-                self.final_layer.adaLN_modulation(modulation_inputs)
+            self.final_layer._modulation_params[
+                (timestep * 1000).item()
+            ] = self.final_layer.adaLN_modulation(modulation_inputs)
             mx.eval(self.final_layer._modulation_params[(timestep * 1000).item()])
 
             if final_timestep:
-                offload_size += self.final_layer.adaLN_modulation.layers[1].weight.size * \
-                    self.final_layer.adaLN_modulation.layers[1].weight.dtype.size
+                offload_size += (
+                    self.final_layer.adaLN_modulation.layers[1].weight.size
+                    * self.final_layer.adaLN_modulation.layers[1].weight.dtype.size
+                )
                 to_offload.extend([self.final_layer.adaLN_modulation.layers[1]])
 
-        for x in to_offload:
+        self.to_offload = to_offload
+        for x in self.to_offload:
             x.clear()
 
         logger.info(f"Cached modulation_params for timesteps={timesteps}")
-        logger.info(f"Peak memory reduction: {(offload_size) / 1e6:.1f} MB")
+        logger.info(
+            f"Cached modulation_params will reduce peak memory by {(offload_size) / 1e9:.1f} GB"
+        )
 
     def clear_modulation_params_cache(self):
-        pass  # raise NotImplementedError
+        for name, module in self.named_modules():
+            if hasattr(module, "_modulation_params"):
+                delattr(module, "_modulation_params")
+        logger.info("Cleared modulation_params cache")
 
     def __call__(
         self,
         latent_image_embeddings: mx.array,
         token_level_text_embeddings: mx.array,
-        pooled_text_embeddings: mx.array,
         timestep: mx.array,
     ) -> mx.array:
-        t = latent_image_embeddings.dtype
-
         batch, latent_height, latent_width, _ = latent_image_embeddings.shape
-
-        # Prepare input embeddings
-        # modulation_inputs = self.y_embedder(pooled_text_embeddings) + self.t_embedder(
-        #     timestep
-        # )
-        # FIXME: aliasing timestep as modulation_inputs for now
-        modulation_inputs = timestep
         token_level_text_embeddings = self.context_embedder(token_level_text_embeddings)
 
         if hasattr(self, "x_pos_embedder"):
@@ -180,52 +215,14 @@ class MMDiT(nn.Module):
         # MultiModalTransformer layers
         if self.config.depth_multimodal > 0:
             for bidx, block in enumerate(self.multimodal_transformer_blocks):
-                # FIXME(arda): Make this a function to reduce code duplication and inlining
-                # # Upcast activations to float32 for layers that were diagnosed
-                # # to be problematic in lower precision
-                # if bidx in (self.config.upcast_multimodal_blocks or []):
-                #     if t != mx.float32:
-                #         logger.debug(
-                #             "config.upcast_multimodal_blocks: "
-                #             f"Upcasting activations at multimodal_block {bidx} to float32"
-                #         )
-                #     latent_image_embeddings = latent_image_embeddings.astype(mx.float32)
-                #     token_level_text_embeddings = token_level_text_embeddings.astype(mx.float32)
-
-                #     if isinstance(modulation_inputs, list):
-                #         modulation_inputs = [m.astype(mx.float32) for m in modulation_inputs]
-                #     else:
-                #         modulation_inputs = modulation_inputs.astype(mx.float32)
-
                 latent_image_embeddings, token_level_text_embeddings = block(
                     latent_image_embeddings,
                     token_level_text_embeddings,
-                    modulation_inputs,
+                    timestep,
                     positional_encodings=positional_encodings,
                 )
                 mx.eval(latent_image_embeddings)
                 mx.eval(token_level_text_embeddings)
-                # if mx.isnan(latent_image_embeddings).any():
-                #     raise ValueError(
-                #         f"NaN detected in latent_image_embeddings at block {bidx}"
-                #     )
-                # if (
-                #     token_level_text_embeddings is not None
-                #     and mx.isnan(token_level_text_embeddings).any()
-                # ):
-                #     raise ValueError(
-                #         f"NaN detected in token_level_text_embeddings at block {bidx}"
-                #     )
-                # if bidx in (self.config.upcast_multimodal_blocks or []):
-                #     logger.debug(
-                #         f"Recasting to original dtype for multimodal_block index {bidx}"
-                #     )
-                #     latent_image_embeddings = latent_image_embeddings.astype(t)
-                #     if token_level_text_embeddings is not None:
-                #         token_level_text_embeddings = (
-                #             token_level_text_embeddings.astype(t)
-                #         )
-                #     modulation_inputs = modulation_inputs.astype(t)
 
         # UnifiedTransformerBlock layers
         if self.config.depth_unified > 0:
@@ -234,39 +231,20 @@ class MMDiT(nn.Module):
             )
 
             for bidx, block in enumerate(self.unified_transformer_blocks):
-                # if bidx in (self.config.upcast_unified_blocks or []):
-                #     if t != mx.float32:
-                #         logger.debug(
-                #             "config.upcast_unified_blocks: "
-                #             f"Upcasting activations at unified_block {bidx} to float32"
-                #         )
-                #     latent_unified_embeddings = latent_unified_embeddings.astype(
-                #         mx.float32
-                #     )
-                #     modulation_inputs = modulation_inputs.astype(mx.float32)
-                #     positional_encodings = positional_encodings.astype(mx.float32)
-
                 latent_unified_embeddings = block(
                     latent_unified_embeddings,
-                    modulation_inputs,
+                    timestep,
                     positional_encodings=positional_encodings,
                 )
-                # if bidx in (self.config.upcast_unified_blocks or []):
-                #     logger.debug(
-                #         f"Recasting to original dtype for unified_block index {bidx}"
-                #     )
-                #     latent_unified_embeddings = latent_unified_embeddings.astype(t)
-                #     modulation_inputs = modulation_inputs.astype(t)
-                #     positional_encodings = positional_encodings.astype(t)
 
             latent_image_embeddings = latent_unified_embeddings[
-                :, token_level_text_embeddings.shape[1]:, ...
+                :, token_level_text_embeddings.shape[1] :, ...
             ]
 
         # Final layer
         latent_image_embeddings = self.final_layer(
             latent_image_embeddings,
-            modulation_inputs,
+            timestep,
         )
         if self.config.patchify_via_reshape:
             latent_image_embeddings = self.x_embedder.unpack(
@@ -319,9 +297,12 @@ class LatentImageAdapter(nn.Module):
         return self.proj(x)
 
     def unpack(self, x: mx.array, latent_image_resolution: Tuple[int]) -> mx.array:
+        """Unpacks the latent image embeddings to the original resolution
+        for `config.patchify_via_reshape` models
+        """
         assert self.config.patchify_via_reshape
 
-        b, hw, _, c_packed = x.shape
+        b = x.shape[0]
         p = self.config.patch_size
         h = latent_image_resolution[0] // p
         w = latent_image_resolution[1] // p
@@ -454,15 +435,9 @@ class TransformerBlock(nn.Module):
     def pre_sdpa(
         self,
         tensor: mx.array,
-        modulation_inputs: mx.array,
+        timestep: mx.array,
     ) -> Dict[str, mx.array]:
-        if hasattr(self, "_modulation_params"):
-            # FIXME: aliasing timestep as modulation_inputs for now
-            modulation_params = self._modulation_params[modulation_inputs.item()]
-        else:
-            # Project Adaptive LayerNorm modulation parameters
-            modulation_params = self.adaLN_modulation(modulation_inputs)
-
+        modulation_params = self._modulation_params[timestep.item()]
         modulation_params = mx.split(
             modulation_params, self.num_modulation_params, axis=-1
         )
@@ -584,18 +559,18 @@ class MultiModalTransformerBlock(nn.Module):
         self,
         latent_image_embeddings: mx.array,  # latent image embeddings
         token_level_text_embeddings: mx.array,  # token-level text embeddings
-        modulation_inputs: mx.array,  # pooled text embeddings + timestep embeddings
+        timestep: mx.array,  # pooled text embeddings + timestep embeddings
         positional_encodings: mx.array = None,  # positional encodings for rope
     ):
         # Prepare multi-modal SDPA inputs
         image_intermediates = self.image_transformer_block.pre_sdpa(
             latent_image_embeddings,
-            modulation_inputs=modulation_inputs,
+            timestep=timestep,
         )
 
         text_intermediates = self.text_transformer_block.pre_sdpa(
             token_level_text_embeddings,
-            modulation_inputs=modulation_inputs,
+            timestep=timestep,
         )
 
         batch = latent_image_embeddings.shape[0]
@@ -708,13 +683,13 @@ class UnifiedTransformerBlock(nn.Module):
     def __call__(
         self,
         latent_unified_embeddings: mx.array,  # latent image embeddings
-        modulation_inputs: mx.array,  # pooled text embeddings + timestep embeddings
+        timestep: mx.array,  # pooled text embeddings + timestep embeddings
         positional_encodings: mx.array = None,  # positional encodings for rope
     ):
         # Prepare multi-modal SDPA inputs
         intermediates = self.transformer_block.pre_sdpa(
             latent_unified_embeddings,
-            modulation_inputs=modulation_inputs,
+            timestep=timestep,
         )
 
         batch = latent_unified_embeddings.shape[0]
@@ -791,13 +766,12 @@ class FinalLayer(nn.Module):
             nn.Linear(config.hidden_size, 2 * config.hidden_size),
         )
 
-    def __call__(self,
-                 latent_image_embeddings: mx.array,
-                 modulation_inputs: mx.array,) -> mx.array:
-        if hasattr(self, "_modulation_params"):
-            modulation_params = self._modulation_params[modulation_inputs.item()]
-        else:
-            modulation_params = self.adaLN_modulation(modulation_inputs)
+    def __call__(
+        self,
+        latent_image_embeddings: mx.array,
+        timestep: mx.array,
+    ) -> mx.array:
+        modulation_params = self._modulation_params[timestep.item()]
 
         shift, residual_scale = mx.split(modulation_params, 2, axis=-1)
         latent_image_embeddings = affine_transform(

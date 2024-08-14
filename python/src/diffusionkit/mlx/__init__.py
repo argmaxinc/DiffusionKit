@@ -8,11 +8,13 @@
 import gc
 import math
 import time
+from pprint import pprint
 from typing import Optional, Tuple
 
 import mlx.core as mx
 import mlx.nn as nn
 import numpy as np
+from argmaxtools.test_utils import AppleSiliconContextMixin, InferenceContextSpec
 from argmaxtools.utils import get_logger
 from diffusionkit.utils import bytes2gigabytes
 from PIL import Image
@@ -37,6 +39,14 @@ MMDIT_CKPT = {
     "sd3-8b-unreleased": "models/sd3_8b_beta.safetensors",  # unreleased
     "FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
 }
+
+
+class DiffusionKitInferenceContext(AppleSiliconContextMixin, InferenceContextSpec):
+    def code_spec(self):
+        return {}
+
+    def model_spec(self):
+        return {}
 
 
 class DiffusionPipeline:
@@ -447,8 +457,19 @@ class DiffusionPipeline:
             logger.info(
                 f"Post decode active memory: {log['decoding']['post']['active_memory']}GB"
             )
-            logger.info(f"Decoding time: {log['decoding']['time']}s")
-            logger.info(f"Peak memory: {log['peak_memory']}GB")
+
+        logger.info("============= Summary =============")
+        logger.info(f"Text encoder: {log['text_encoding']['time']:.1f}s")
+        logger.info(f"Denoising: {log['denoising']['time']:.1f}s")
+        logger.info(f"Image decoder: {log['decoding']['time']:.1f}s")
+        logger.info(f"Peak memory: {log['peak_memory']:.1f}GB")
+
+        logger.info("============= Inference Context =============")
+        ic = DiffusionKitInferenceContext()
+        logger.info("Operating System:")
+        pprint(ic.os_spec())
+        logger.info("Device:")
+        pprint(ic.device_spec())
 
         # unload VAE Decoder model after decoding in low memory mode
         if self.low_memory_mode:
@@ -552,9 +573,6 @@ class FluxPipeline(DiffusionPipeline):
         self.decoder = load_vae_decoder(float16=w16, key=mmdit_ckpt)
         self.encoder = load_vae_encoder(float16=False, key=mmdit_ckpt)
         self.latent_format = FluxLatentFormat()
-
-        if not use_t5:
-            logger.warning("FLUX can not be used without T5. Loading T5..")
         self.use_t5 = True
 
         self.clip_l = load_text_encoder(
@@ -633,9 +651,6 @@ class CFGDenoiser(nn.Module):
         mmdit_input = {
             "latent_image_embeddings": x_t_mmdit,
             "token_level_text_embeddings": mx.expand_dims(conditioning, 2),
-            "pooled_text_embeddings": mx.expand_dims(
-                mx.expand_dims(pooled_conditioning, 1), 1
-            ),
             "timestep": timestep,
         }
 
@@ -698,7 +713,7 @@ def sample_euler(model: CFGDenoiser, x, sigmas, extra_args=None):
     sigmas = mx.array([1.0, 0.75, 0.5, 0.25, 0.0], mx.bfloat16)  # FIXME
     t = trange(len(sigmas) - 1)
 
-    model.cache_modulation_params(extra_args["pooled_conditioning"], sigmas)
+    model.cache_modulation_params(extra_args.pop("pooled_conditioning"), sigmas)
 
     iter_time = []
     for i in t:
@@ -713,6 +728,6 @@ def sample_euler(model: CFGDenoiser, x, sigmas, extra_args=None):
         end_time = t.format_dict["elapsed"]
         iter_time.append(round((end_time - start_time), 3))
 
-    model.clear_cache()
+    # model.clear_cache()
 
     return x, iter_time
