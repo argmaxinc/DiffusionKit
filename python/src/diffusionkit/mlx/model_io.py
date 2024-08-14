@@ -6,7 +6,6 @@
 #
 
 import json
-from functools import partial
 from typing import Optional
 
 import mlx.core as mx
