@@ -482,18 +482,19 @@ class DiffusionPipeline:
                 f"Post decode active memory: {log['decoding']['post']['active_memory']}GB"
             )
 
-        logger.info("============= Summary =============")
-        logger.info(f"Text encoder: {log['text_encoding']['time']:.1f}s")
-        logger.info(f"Denoising: {log['denoising']['time']:.1f}s")
-        logger.info(f"Image decoder: {log['decoding']['time']:.1f}s")
-        logger.info(f"Peak memory: {log['peak_memory']:.1f}GB")
+        if verbose:
+            logger.info("============= Summary =============")
+            logger.info(f"Text encoder: {log['text_encoding']['time']:.1f}s")
+            logger.info(f"Denoising: {log['denoising']['time']:.1f}s")
+            logger.info(f"Image decoder: {log['decoding']['time']:.1f}s")
+            logger.info(f"Peak memory: {log['peak_memory']:.1f}GB")
 
-        logger.info("============= Inference Context =============")
-        ic = DiffusionKitInferenceContext()
-        logger.info("Operating System:")
-        pprint(ic.os_spec())
-        logger.info("Device:")
-        pprint(ic.device_spec())
+            logger.info("============= Inference Context =============")
+            ic = DiffusionKitInferenceContext()
+            logger.info("Operating System:")
+            pprint(ic.os_spec())
+            logger.info("Device:")
+            pprint(ic.device_spec())
 
         # unload VAE Decoder model after decoding in low memory mode
         if self.low_memory_mode:
