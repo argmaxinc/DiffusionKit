@@ -76,12 +76,21 @@ class DiffusionPipeline:
         self.use_clip_g = True
         self.check_and_load_models()
 
-    def load_mmdit(self):
+    def load_mmdit(self, only_modulation_dict=False):
+        if only_modulation_dict:
+            return load_mmdit(
+                float16=True if self.dtype == self.float16_dtype else False,
+                key=self.mmdit_ckpt,
+                model_key=self.model_version,
+                low_memory_mode=self.low_memory_mode,
+                only_modulation_dict=only_modulation_dict,
+            )
         self.mmdit = load_mmdit(
             float16=True if self.dtype == self.float16_dtype else False,
             key=self.mmdit_ckpt,
             model_key=self.model_version,
             low_memory_mode=self.low_memory_mode,
+            only_modulation_dict=only_modulation_dict,
         )
 
     def check_and_load_models(self):
@@ -591,10 +600,17 @@ class FluxPipeline(DiffusionPipeline):
         self.use_clip_g = False
         self.check_and_load_models()
 
-    def load_mmdit(self):
+    def load_mmdit(self, only_modulation_dict=False):
+        if only_modulation_dict:
+            return load_flux(
+                float16=True if self.dtype == self.float16_dtype else False,
+                low_memory_mode=self.low_memory_mode,
+                only_modulation_dict=only_modulation_dict,
+            )
         self.mmdit = load_flux(
             float16=True if self.dtype == self.float16_dtype else False,
             low_memory_mode=self.low_memory_mode,
+            only_modulation_dict=only_modulation_dict,
         )
 
     def encode_text(
@@ -640,7 +656,9 @@ class CFGDenoiser(nn.Module):
         )
 
     def clear_cache(self):
-        self.model.mmdit.clear_modulation_params_cache()
+        self.model.mmdit.load_weights(
+            self.model.load_mmdit(only_modulation_dict=True), strict=False
+        )
 
     def __call__(
         self,
@@ -737,6 +755,6 @@ def sample_euler(model: CFGDenoiser, x, sigmas, extra_args=None):
         end_time = t.format_dict["elapsed"]
         iter_time.append(round((end_time - start_time), 3))
 
-    # model.clear_cache()
+    model.clear_cache()
 
     return x, iter_time

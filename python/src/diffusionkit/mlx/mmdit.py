@@ -10,6 +10,7 @@ import mlx.nn as nn
 import numpy as np
 from argmaxtools.utils import get_logger
 from beartype.typing import Dict, List, Optional, Tuple
+from mlx.utils import tree_map
 
 from .config import MMDiTConfig, PositionalEncoding
 
@@ -163,7 +164,8 @@ class MMDiT(nn.Module):
 
         self.to_offload = to_offload
         for x in self.to_offload:
-            x.clear()
+            x.update(tree_map(lambda _: mx.array([]), x.parameters()))
+            # x.clear()
 
         logger.info(f"Cached modulation_params for timesteps={timesteps}")
         logger.info(

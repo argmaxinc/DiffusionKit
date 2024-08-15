@@ -654,8 +654,10 @@ def load_mmdit(
     float16: bool = False,
     model_key: str = "mmdit_2b",
     low_memory_mode: bool = True,
+    only_modulation_dict: bool = False,
 ):
     """Load the MM-DiT model from the checkpoint file."""
+    """only_modulation_dict: Only returns the modulation dictionary"""
     dtype = _FLOAT16 if float16 else mx.float32
     config = SD3_2b
     config.low_memory_mode = low_memory_mode
@@ -666,6 +668,9 @@ def load_mmdit(
     weights = mx.load(mmdit_weights_ckpt)
     weights = mmdit_state_dict_adjustments(weights, prefix="model.diffusion_model.")
     weights = {k: v.astype(dtype) for k, v in weights.items()}
+    if only_modulation_dict:
+        weights = {k: v for k, v in weights.items() if "adaLN" in k}
+        return tree_flatten(weights)
     model.update(tree_unflatten(tree_flatten(weights)))
 
     return model
@@ -676,6 +681,7 @@ def load_flux(
     float16: bool = False,
     model_key: str = "FLUX.1-schnell",
     low_memory_mode: bool = True,
+    only_modulation_dict: bool = False,
 ):
     """Load the MM-DiT Flux model from the checkpoint file."""
     dtype = _FLOAT16 if float16 else mx.float32
@@ -691,6 +697,9 @@ def load_flux(
         weights, prefix="", hidden_size=config.hidden_size, mlp_ratio=config.mlp_ratio
     )
     weights = {k: v.astype(dtype) for k, v in weights.items()}
+    if only_modulation_dict:
+        weights = {k: v for k, v in weights.items() if "adaLN" in k}
+        return tree_flatten(weights)
     model.update(tree_unflatten(tree_flatten(weights)))
 
     return model
