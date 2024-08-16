@@ -40,6 +40,11 @@ MMDIT_CKPT = {
     "FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
 }
 
+T5_MAX_LENGTH = {
+    "stable-diffusion-3-medium": 512,
+    "FLUX.1-schnell": 256,
+}
+
 
 class DiffusionKitInferenceContext(AppleSiliconContextMixin, InferenceContextSpec):
     def code_spec(self):
@@ -138,7 +143,9 @@ class DiffusionPipeline:
                 low_memory_mode=self.low_memory_mode,
             )
         if not hasattr(self, "t5_tokenizer") or self.t5_tokenizer is None:
-            self.t5_tokenizer = load_t5_tokenizer()
+            self.t5_tokenizer = load_t5_tokenizer(
+                max_context_length=T5_MAX_LENGTH[self.model_version]
+            )
         self.use_t5 = True
 
     def unload_t5(self):
