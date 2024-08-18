@@ -84,17 +84,15 @@ class ResnetBlock2D(nn.Module):
             self.conv_shortcut = nn.Linear(in_channels, out_channels)
 
     def __call__(self, x, temb=None):
-        dtype = x.dtype
-
         if temb is not None:
             temb = self.time_emb_proj(nn.silu(temb))
 
-        y = self.norm1(x.astype(mx.float32)).astype(dtype)
+        y = self.norm1(x)
         y = nn.silu(y)
         y = self.conv1(y)
         if temb is not None:
             y = y + temb[:, None, None, :]
-        y = self.norm2(y.astype(mx.float32)).astype(dtype)
+        y = self.norm2(y)
         y = nn.silu(y)
         y = self.conv2(y)
 
@@ -386,37 +384,19 @@ class VAEDecoder(nn.Module):
         self.conv_out = nn.Conv2d(block_out_channels[0], out_channels, 3, padding=1)
 
     def __call__(self, x):
-        t = x.dtype
         x = self.conv_in(x)
 
         x = self.mid_blocks[0](x)
-        if mx.isnan(x).any():
-            raise ValueError("NaN detected in VAE Decoder after mid_blocks[0]")
-        x = x.astype(mx.float32)
         x = self.mid_blocks[1](x)
-        if mx.isnan(x).any():
-            raise ValueError("NaN detected in VAE Decoder after mid_blocks[1]")
-        x = x.astype(t)
         x = self.mid_blocks[2](x)
-        if mx.isnan(x).any():
-            raise ValueError("NaN detected in VAE Decoder after mid_blocks[2]")
 
         for l in reversed(self.up_blocks):
             x = l(x)
             mx.eval(x)
 
-        if mx.isnan(x).any():
-            raise ValueError("NaN detected in VAE Decoder after up_blocks")
-
-        x = x.astype(mx.float32)
         x = self.conv_norm_out(x)
-        if mx.isnan(x).any():
-            raise ValueError("NaN detected in VAE Decoder after conv_norm_out")
-        x = x.astype(t)
         x = nn.silu(x)
         x = self.conv_out(x)
-        if mx.isnan(x).any():
-            raise ValueError("NaN detected in VAE Decoder after conv_out")
 
         return x
 

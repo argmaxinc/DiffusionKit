@@ -16,7 +16,7 @@ from .config import MMDiTConfig, PositionalEncoding
 
 logger = get_logger(__name__)
 
-SDPA_FLASH_ATTN_THRESHOLD = 1000
+SDPA_FLASH_ATTN_THRESHOLD = 1024
 
 
 class MMDiT(nn.Module):
@@ -218,8 +218,6 @@ class MMDiT(nn.Module):
                     timestep,
                     positional_encodings=positional_encodings,
                 )
-                mx.eval(latent_image_embeddings)
-                mx.eval(token_level_text_embeddings)
 
         # UnifiedTransformerBlock layers
         if self.config.depth_unified > 0:
@@ -749,8 +747,9 @@ class QKNorm(nn.Module):
         self.k_norm = nn.RMSNorm(head_dim, eps=1e-6)
 
     def __call__(self, q: mx.array, k: mx.array) -> Tuple[mx.array, mx.array]:
-        q = self.q_norm(q.astype(mx.float32))
-        k = self.k_norm(k.astype(mx.float32))
+        # Note: mlx.nn.RMSNorm has high precision accumulation (does not require upcasting)
+        q = self.q_norm(q)
+        k = self.k_norm(k)
         return q, k
 
 
