@@ -5,7 +5,10 @@ from typing import List
 import mlx.core as mx
 import numpy as np
 import regex
+from argmaxtools.utils import get_logger
 from transformers import AutoTokenizer, T5Config
+
+logger = get_logger(__name__)
 
 
 class Tokenizer:
@@ -101,6 +104,14 @@ class Tokenizer:
 
         # Map to token ids and return
         tokens = [self.vocab[t] for t in bpe_tokens]
+
+        # Truncate
+        max_length = self.max_length - int(prepend_bos) - int(append_eos)
+        if len(tokens) > max_length:
+            tokens = tokens[:max_length]
+            logger.warning(
+                f"Length of tokens exceeds {self.max_length}. Truncating to {self.max_length}."
+            )
         if prepend_bos:
             tokens = [self.bos_token] + tokens
         if append_eos:
@@ -110,16 +121,16 @@ class Tokenizer:
 
 
 class T5Tokenizer:
-    def __init__(self, config: T5Config):
+    def __init__(self, config: T5Config, max_context_length: int):
+        self.max_length = max_context_length
         self._decoder_start_id = config.decoder_start_token_id
         self._tokenizer = AutoTokenizer.from_pretrained(
             "google/t5-v1_1-xxl",
             legacy=False,
-            model_max_length=getattr(config, "n_positions", 512),
+            model_max_length=self.max_length,
         )
 
         self.pad_to_max_length = True
-        self.max_length = 77
         self.pad_with_eos = False
 
     @property
@@ -136,6 +147,8 @@ class T5Tokenizer:
                 s,
                 return_tensors="np",
                 return_attention_mask=False,
+                max_length=self.max_length,
+                truncation=True,
             )["input_ids"]
         )
 

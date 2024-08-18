@@ -871,6 +871,6 @@ def load_tokenizer(
     return Tokenizer(bpe_ranks, vocab, pad_with_eos)
 
 
-def load_t5_tokenizer():
+def load_t5_tokenizer(max_context_length: int = 256):
     config = T5Config.from_pretrained("google/t5-v1_1-xxl")
-    return T5Tokenizer(config)
+    return T5Tokenizer(config, max_context_length)
