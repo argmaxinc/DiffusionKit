@@ -147,6 +147,8 @@ class T5Tokenizer:
                 s,
                 return_tensors="np",
                 return_attention_mask=False,
+                max_length=self.max_length,
+                truncation=True,
             )["input_ids"]
         )
 
