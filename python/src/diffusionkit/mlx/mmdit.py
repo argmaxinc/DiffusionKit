@@ -447,9 +447,10 @@ class TransformerBlock(nn.Module):
         # LayerNorm and modulate before SDPA
         try:
             modulated_pre_attention = affine_transform(
-                self.norm1(tensor),
+                tensor,
                 shift=post_norm1_shift,
                 residual_scale=post_norm1_residual_scale,
+                norm_module=self.norm1,
             )
         except Exception as e:
             logger.error(
@@ -529,9 +530,10 @@ class TransformerBlock(nn.Module):
             # Apply separate modulation parameters and LayerNorm across attn and mlp
             mlp_out = self.mlp(
                 affine_transform(
-                    self.norm2(residual),
+                    residual,
                     shift=post_norm2_shift,
                     residual_scale=post_norm2_residual_scale,
+                    norm_module=self.norm2,
                 )
             )
             return residual + post_mlp_scale * mlp_out
@@ -777,9 +779,10 @@ class FinalLayer(nn.Module):
 
         shift, residual_scale = mx.split(modulation_params, 2, axis=-1)
         latent_image_embeddings = affine_transform(
-            self.norm_final(latent_image_embeddings),
+            latent_image_embeddings,
             shift=shift,
             residual_scale=residual_scale,
+            norm_module=self.norm_final,
         )
         return self.linear(latent_image_embeddings)
 
@@ -931,9 +934,16 @@ class RoPE(nn.Module):
 
 
 def affine_transform(
-    x: mx.array, shift: mx.array, residual_scale: mx.array
+    x: mx.array,
+    shift: mx.array,
+    residual_scale: mx.array,
+    norm_module: nn.Module = None,
 ) -> mx.array:
     """Affine transformation (Used for Adaptive LayerNorm Modulation)"""
+    if norm_module is not None:
+        return mx.fast.layer_norm(
+            x, 1.0 + residual_scale.squeeze(), shift.squeeze(), norm_module.eps
+        )
     return x * (1.0 + residual_scale) + shift
 
 
