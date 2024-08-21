@@ -16,16 +16,19 @@ HEIGHT = {
     "stable-diffusion-3-medium": 512,
     "sd3-8b-unreleased": 1024,
     "FLUX.1-schnell": 512,
+    "FLUX.1-schnell-4bit-quantized": 512,
 }
 WIDTH = {
     "stable-diffusion-3-medium": 512,
     "sd3-8b-unreleased": 1024,
     "FLUX.1-schnell": 512,
+    "FLUX.1-schnell-4bit-quantized": 512,
 }
 SHIFT = {
     "stable-diffusion-3-medium": 3.0,
     "sd3-8b-unreleased": 3.0,
     "FLUX.1-schnell": 1.0,
+    "FLUX.1-schnell-4bit-quantized": 1.0,
 }
 
 
@@ -107,7 +110,7 @@ def cli():
     args.w16 = True
     args.a16 = True
 
-    if args.model_version == "FLUX.1-schnell" and args.cfg > 0.0:
+    if "FLUX" in args.model_version and args.cfg > 0.0:
         logger.warning("Disabling CFG for FLUX.1-schnell model.")
         args.cfg = 0.0
 
