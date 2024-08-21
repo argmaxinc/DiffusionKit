@@ -10,6 +10,7 @@ from typing import Optional
 
 import mlx.core as mx
 from huggingface_hub import hf_hub_download
+from mlx import nn
 from mlx.utils import tree_flatten, tree_unflatten
 from transformers import T5Config
 
@@ -41,6 +42,10 @@ _MMDIT = {
         "FLUX.1-schnell": "flux-schnell.safetensors",
         "vae": "ae.safetensors",
     },
+    "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": {
+        "FLUX.1-schnell-4bit-quantized": "flux-schnell-4bit-quantized.safetensors",
+        "vae": "ae.safetensors",
+    },
 }
 _DEFAULT_MODEL = "argmaxinc/stable-diffusion"
 _MODELS = {
@@ -63,6 +68,10 @@ _PREFIX = {
         "vae_decoder": "first_stage_model.decoder.",
     },
     "argmaxinc/mlx-FLUX.1-schnell": {
+        "vae_encoder": "encoder.",
+        "vae_decoder": "decoder.",
+    },
+    "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": {
         "vae_encoder": "encoder.",
         "vae_decoder": "decoder.",
     },
@@ -693,10 +702,20 @@ def load_flux(
     flux_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, flux_weights)
     hf_hub_download(key, "config.json")
     weights = mx.load(flux_weights_ckpt)
-    weights = flux_state_dict_adjustments(
-        weights, prefix="", hidden_size=config.hidden_size, mlp_ratio=config.mlp_ratio
-    )
-    weights = {k: v.astype(dtype) for k, v in weights.items()}
+
+    if model_key == "FLUX.1-schnell":
+        weights = flux_state_dict_adjustments(
+            weights,
+            prefix="",
+            hidden_size=config.hidden_size,
+            mlp_ratio=config.mlp_ratio,
+        )
+    elif model_key == "FLUX.1-schnell-4bit-quantized":  # 4-bit ckpt already adjusted
+        nn.quantize(model)
+
+    weights = {
+        k: v.astype(dtype) if v.dtype != mx.uint32 else v for k, v in weights.items()
+    }
     if only_modulation_dict:
         weights = {k: v for k, v in weights.items() if "adaLN" in k}
         return tree_flatten(weights)
