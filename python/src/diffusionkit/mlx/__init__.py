@@ -38,11 +38,13 @@ MMDIT_CKPT = {
     "stable-diffusion-3-medium": "stabilityai/stable-diffusion-3-medium",
     "sd3-8b-unreleased": "models/sd3_8b_beta.safetensors",  # unreleased
     "FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
+    "FLUX.1-schnell-4bit-quantized": "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized",
 }
 
 T5_MAX_LENGTH = {
     "stable-diffusion-3-medium": 512,
     "FLUX.1-schnell": 256,
+    "FLUX.1-schnell-4bit-quantized": 256,
 }
 
 
@@ -592,6 +594,7 @@ class FluxPipeline(DiffusionPipeline):
         low_memory_mode: bool = True,
         a16: bool = False,
         local_ckpt=None,
+        quantize_mmdit: bool = False,
     ):
         model_io.LOCAl_SD3_CKPT = local_ckpt
         self.float16_dtype = mx.bfloat16
@@ -606,16 +609,21 @@ class FluxPipeline(DiffusionPipeline):
         self.latent_format = FluxLatentFormat()
         self.use_t5 = True
         self.use_clip_g = False
+        self.quantize_mmdit = quantize_mmdit
         self.check_and_load_models()
 
     def load_mmdit(self, only_modulation_dict=False):
         if only_modulation_dict:
             return load_flux(
+                key=self.mmdit_ckpt,
+                model_key=self.model_version,
                 float16=True if self.dtype == self.float16_dtype else False,
                 low_memory_mode=self.low_memory_mode,
                 only_modulation_dict=only_modulation_dict,
             )
         self.mmdit = load_flux(
+            key=self.mmdit_ckpt,
+            model_key=self.model_version,
             float16=True if self.dtype == self.float16_dtype else False,
             low_memory_mode=self.low_memory_mode,
             only_modulation_dict=only_modulation_dict,
