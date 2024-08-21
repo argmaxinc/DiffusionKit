@@ -3,7 +3,7 @@ import os
 from setuptools import find_packages, setup
 from setuptools.command.install import install
 
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 
 
 class VersionInstallCommand(install):
