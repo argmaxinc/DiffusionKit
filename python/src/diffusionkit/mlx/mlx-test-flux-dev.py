@@ -89,9 +89,20 @@ def verify_conversion(weights, config):
             count += 1
     print(f"Total mismatches: {count}")
 
+
 def save_modified_weights(weights, output_file):
     print(f"Saving modified weights to {output_file}")
-    mx.save(output_file, weights)
+
+    # Convert the dictionary of arrays to a flat dictionary
+    flat_weights = {}
+    for key, value in weights.items():
+        if not isinstance(value, mx.array):
+            flat_weights[key] = mx.array(value)
+        else:
+            flat_weights[key] = value
+
+    # Save the flat dictionary
+    mx.save(output_file, flat_weights)
     print("Weights saved successfully!")
 
 def upload_to_hub(file_path, repo_id, token):
