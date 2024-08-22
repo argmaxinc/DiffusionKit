@@ -710,6 +710,13 @@ def load_flux(
             hidden_size=config.hidden_size,
             mlp_ratio=config.mlp_ratio,
         )
+    elif model_key == "FLUX.1-dev":
+        weights = flux_state_dict_adjustments(
+            weights,
+            prefix="",
+            hidden_size=config.hidden_size,
+            mlp_ratio=config.mlp_ratio,
+        )
     elif model_key == "FLUX.1-schnell-4bit-quantized":  # 4-bit ckpt already adjusted
         nn.quantize(model)
 

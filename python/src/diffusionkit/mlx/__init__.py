@@ -39,12 +39,14 @@ MMDIT_CKPT = {
     "sd3-8b-unreleased": "models/sd3_8b_beta.safetensors",  # unreleased
     "FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
     "FLUX.1-schnell-4bit-quantized": "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized",
+    # "FLUX.1-dev": "argmaxinc/mlx-FLUX.1-dev",
 }
 
 T5_MAX_LENGTH = {
     "stable-diffusion-3-medium": 512,
     "FLUX.1-schnell": 256,
     "FLUX.1-schnell-4bit-quantized": 256,
+    # "FLUX.1-dev": 256,
 }
 
 

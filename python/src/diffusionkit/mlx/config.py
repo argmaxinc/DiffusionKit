@@ -90,6 +90,22 @@ FLUX_SCHNELL = MMDiTConfig(
     dtype=mx.bfloat16,
 )
 
+FLUX_DEV = MMDiTConfig(
+    num_heads=24,
+    depth_multimodal=19,
+    depth_unified=38,
+    parallel_mlp_for_unified_blocks=True,
+    hidden_size_override=3072,
+    patchify_via_reshape=True,
+    pos_embed_type=PositionalEncoding.PreSDPARope,
+    rope_axes_dim=(16, 56, 56),
+    pooled_text_embed_dim=768,  # CLIP-L/14 only
+    use_qk_norm=True,
+    float16_dtype=mx.bfloat16,
+    # guidance_embed=True,  # Add this line
+    dtype=mx.bfloat16
+)
+
 
 @dataclass
 class AutoencoderConfig:
