@@ -35,16 +35,16 @@ from .sampler import FluxSampler, ModelSamplingDiscreteFlow
 logger = get_logger(__name__)
 
 MMDIT_CKPT = {
-    "stable-diffusion-3-medium": "stabilityai/stable-diffusion-3-medium",
+    "argmaxinc/mlx-stable-diffusion-3-medium": "argmaxinc/mlx-stable-diffusion-3-medium",
     "sd3-8b-unreleased": "models/sd3_8b_beta.safetensors",  # unreleased
-    "FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
-    "FLUX.1-schnell-4bit-quantized": "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized",
+    "argmaxinc/mlx-FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
+    "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized",
 }
 
 T5_MAX_LENGTH = {
-    "stable-diffusion-3-medium": 512,
-    "FLUX.1-schnell": 256,
-    "FLUX.1-schnell-4bit-quantized": 256,
+    "argmaxinc/mlx-stable-diffusion-3-medium": 512,
+    "argmaxinc/mlx-FLUX.1-schnell": 256,
+    "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 256,
 }
 
 
@@ -62,7 +62,7 @@ class DiffusionPipeline:
         w16: bool = False,
         shift: float = 1.0,
         use_t5: bool = True,
-        model_version: str = "stable-diffusion-3-medium",
+        model_version: str = "argmaxinc/mlx-stable-diffusion-3-medium",
         low_memory_mode: bool = True,
         a16: bool = False,
         local_ckpt=None,
@@ -588,7 +588,7 @@ class FluxPipeline(DiffusionPipeline):
         w16: bool = False,
         shift: float = 1.0,
         use_t5: bool = True,
-        model_version: str = "FLUX.1-schnell",
+        model_version: str = "argmaxinc/mlx-FLUX.1-schnell",
         low_memory_mode: bool = True,
         a16: bool = False,
         local_ckpt=None,

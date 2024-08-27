@@ -97,7 +97,7 @@ from diffusionkit.mlx import DiffusionPipeline
 pipeline = DiffusionPipeline(
   shift=3.0,
   use_t5=False,
-  model_version="stable-diffusion-3-medium",
+  model_version="argmaxinc/mlx-stable-diffusion-3-medium",
   low_memory_mode=True,
   a16=True,
   w16=True,
@@ -109,7 +109,7 @@ For FLUX:
 from diffusionkit.mlx import FluxPipeline
 pipeline = FluxPipeline(
   shift=1.0,
-  model_version="FLUX.1-schnell",
+  model_version="argmaxinc/mlx-FLUX.1-schnell",
   low_memory_mode=True,
   a16=True,
   w16=True,

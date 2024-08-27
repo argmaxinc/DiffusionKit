@@ -32,18 +32,18 @@ from .vae import Autoencoder, VAEDecoder, VAEEncoder
 
 
 RANK = 32
-_DEFAULT_MMDIT = "stabilityai/stable-diffusion-3-medium"
+_DEFAULT_MMDIT = "argmaxinc/mlx-stable-diffusion-3-medium"
 _MMDIT = {
-    "stabilityai/stable-diffusion-3-medium": {
-        "stable-diffusion-3-medium": "sd3_medium.safetensors",
+    "argmaxinc/mlx-stable-diffusion-3-medium": {
+        "argmaxinc/mlx-stable-diffusion-3-medium": "sd3_medium.safetensors",
         "vae": "sd3_medium.safetensors",
     },
     "argmaxinc/mlx-FLUX.1-schnell": {
-        "FLUX.1-schnell": "flux-schnell.safetensors",
+        "argmaxinc/mlx-FLUX.1-schnell": "flux-schnell.safetensors",
         "vae": "ae.safetensors",
     },
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": {
-        "FLUX.1-schnell-4bit-quantized": "flux-schnell-4bit-quantized.safetensors",
+        "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": "flux-schnell-4bit-quantized.safetensors",
         "vae": "ae.safetensors",
     },
 }
@@ -63,7 +63,7 @@ _MODELS = {
 }
 
 _PREFIX = {
-    "stabilityai/stable-diffusion-3-medium": {
+    "argmaxinc/mlx-stable-diffusion-3-medium": {
         "vae_encoder": "first_stage_model.encoder.",
         "vae_decoder": "first_stage_model.decoder.",
     },
@@ -80,11 +80,11 @@ _PREFIX = {
 _FLOAT16 = mx.bfloat16
 
 DEPTH = {
-    "stable-diffusion-3-medium": 24,
+    "argmaxinc/mlx-stable-diffusion-3-medium": 24,
     "sd3-8b-unreleased": 38,
 }
 MAX_LATENT_RESOLUTION = {
-    "stable-diffusion-3-medium": 96,
+    "argmaxinc/mlx-stable-diffusion-3-medium": 96,
     "sd3-8b-unreleased": 192,
 }
 
@@ -674,6 +674,7 @@ def load_mmdit(
 
     mmdit_weights = _MMDIT[key][model_key]
     mmdit_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, mmdit_weights)
+    hf_hub_download(key, "config.json")
     weights = mx.load(mmdit_weights_ckpt)
     weights = mmdit_state_dict_adjustments(weights, prefix="model.diffusion_model.")
     weights = {k: v.astype(dtype) for k, v in weights.items()}
@@ -688,7 +689,7 @@ def load_mmdit(
 def load_flux(
     key: str = "argmaxinc/mlx-FLUX.1-schnell",
     float16: bool = False,
-    model_key: str = "FLUX.1-schnell",
+    model_key: str = "argmaxinc/mlx-FLUX.1-schnell",
     low_memory_mode: bool = True,
     only_modulation_dict: bool = False,
 ):
@@ -703,14 +704,16 @@ def load_flux(
     hf_hub_download(key, "config.json")
     weights = mx.load(flux_weights_ckpt)
 
-    if model_key == "FLUX.1-schnell":
+    if model_key == "argmaxinc/mlx-FLUX.1-schnell":
         weights = flux_state_dict_adjustments(
             weights,
             prefix="",
             hidden_size=config.hidden_size,
             mlp_ratio=config.mlp_ratio,
         )
-    elif model_key == "FLUX.1-schnell-4bit-quantized":  # 4-bit ckpt already adjusted
+    elif (
+        model_key == "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized"
+    ):  # 4-bit ckpt already adjusted
         nn.quantize(model)
 
     weights = {
