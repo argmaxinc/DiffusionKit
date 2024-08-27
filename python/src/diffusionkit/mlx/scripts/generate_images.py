@@ -127,7 +127,6 @@ def cli():
 
     # Load the models
     sd = pipeline_class(
-        model="argmaxinc/stable-diffusion",
         w16=args.w16,
         shift=shift,
         use_t5=args.t5,

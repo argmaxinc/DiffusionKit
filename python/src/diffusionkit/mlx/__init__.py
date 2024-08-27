@@ -59,7 +59,6 @@ class DiffusionKitInferenceContext(AppleSiliconContextMixin, InferenceContextSpe
 class DiffusionPipeline:
     def __init__(
         self,
-        model: str = _DEFAULT_MODEL,
         w16: bool = False,
         shift: float = 1.0,
         use_t5: bool = True,
@@ -76,7 +75,7 @@ class DiffusionPipeline:
         self.use_t5 = use_t5
         self.mmdit_ckpt = MMDIT_CKPT[model_version]
         self.low_memory_mode = low_memory_mode
-        self.model = model
+        self.model = _DEFAULT_MODEL
         self.model_version = model_version
         self.sampler = ModelSamplingDiscreteFlow(shift=shift)
         self.latent_format = SD3LatentFormat()
@@ -586,7 +585,6 @@ class DiffusionPipeline:
 class FluxPipeline(DiffusionPipeline):
     def __init__(
         self,
-        model: str = _DEFAULT_MODEL,
         w16: bool = False,
         shift: float = 1.0,
         use_t5: bool = True,
@@ -603,7 +601,7 @@ class FluxPipeline(DiffusionPipeline):
         self.activation_dtype = self.float16_dtype if a16 else mx.float32
         self.mmdit_ckpt = MMDIT_CKPT[model_version]
         self.low_memory_mode = low_memory_mode
-        self.model = model
+        self.model = _DEFAULT_MODEL
         self.model_version = model_version
         self.sampler = FluxSampler(shift=shift)
         self.latent_format = FluxLatentFormat()
