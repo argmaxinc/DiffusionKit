@@ -25,7 +25,7 @@ CACHE_SUBFOLDER = None
 
 LOW_MEMORY_MODE = True
 SAVE_IMAGES = True
-MODEL_VERSION = "stable-diffusion-3-medium"
+MODEL_VERSION = "argmaxinc/mlx-stable-diffusion-3-medium"
 USE_T5 = False
 SKIP_CORRECTNESS = False
 
@@ -49,7 +49,7 @@ class TestSD3Pipeline(unittest.TestCase):
             metadata = json.load(f)
 
         # Group metadata by model size
-        model_examples = {"stable-diffusion-3-medium": []}
+        model_examples = {"argmaxinc/mlx-stable-diffusion-3-medium": []}
         for data in metadata:
             model_examples[data["model_version"]].append(data)
 
@@ -106,7 +106,7 @@ class TestSD3Pipeline(unittest.TestCase):
             metadata = json.load(f)
 
         # Group metadata by model size
-        model_examples = {"stable-diffusion-3-medium": []}
+        model_examples = {"argmaxinc/mlx-stable-diffusion-3-medium": []}
         for data in metadata:
             model_examples[data["model_version"]].append(data)
 
@@ -187,7 +187,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model-size",
         type=str,
-        default="stable-diffusion-3-medium",
+        default="argmaxinc/mlx-stable-diffusion-3-medium",
         choices=tuple(MMDIT_CKPT.keys()),
         help="model version to test",
     )
