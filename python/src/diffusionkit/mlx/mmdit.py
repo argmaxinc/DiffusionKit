@@ -945,7 +945,10 @@ def affine_transform(
             return mx.fast.layer_norm(
                 x, 1.0 + residual_scale.squeeze(), shift.squeeze(), norm_module.eps
             )
-    return norm_module(x) * (1.0 + residual_scale) + shift
+    if norm_module is not None:
+        return norm_module(x) * (1.0 + residual_scale) + shift
+    else:
+        return x * (1.0 + residual_scale) + shift
 
 
 def unpatchify(
