@@ -89,20 +89,9 @@ def verify_conversion(weights, config):
             count += 1
     print(f"Total mismatches: {count}")
 
-
 def save_modified_weights(weights, output_file):
     print(f"Saving modified weights to {output_file}")
-
-    # Convert the dictionary of arrays to a flat dictionary
-    flat_weights = {}
-    for key, value in weights.items():
-        if not isinstance(value, mx.array):
-            flat_weights[key] = mx.array(value)
-        else:
-            flat_weights[key] = value
-
-    # Save the flat dictionary
-    mx.save(output_file, flat_weights)
+    mx.save_safetensors(output_file, weights)
     print("Weights saved successfully!")
 
 def upload_to_hub(file_path, repo_id, token):
@@ -123,11 +112,12 @@ def main():
     # Verify the conversion
     verify_conversion(weights, config)
 
-    output_file = "flux1-dev-mlx.safetensors"
+    output_file = "/Volumes/USB/flux1-dev-mlx.safetensors"
     save_modified_weights(weights, output_file)
+    
     repo_id = "raoulritter/flux-dev-mlx"
     token = os.getenv("HF_TOKEN")  # Make sure to set this environment variable
-    upload_to_hub(output_file, repo_id, token)
+    # upload_to_hub(output_file, repo_id, token)
 
 if __name__ == "__main__":
     main()
