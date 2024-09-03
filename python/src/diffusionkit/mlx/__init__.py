@@ -46,7 +46,7 @@ T5_MAX_LENGTH = {
     "stable-diffusion-3-medium": 512,
     "FLUX.1-schnell": 256,
     "FLUX.1-schnell-4bit-quantized": 256,
-    "FLUX.1-dev": 256,
+    "FLUX.1-dev": 512,
 }
 
 

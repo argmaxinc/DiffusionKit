@@ -711,14 +711,7 @@ def load_flux(
     hf_hub_download(key, "config.json")
     weights = mx.load(flux_weights_ckpt)
 
-    if model_key == "FLUX.1-schnell":
-        weights = flux_state_dict_adjustments(
-            weights,
-            prefix="",
-            hidden_size=config.hidden_size,
-            mlp_ratio=config.mlp_ratio,
-        )
-    elif model_key == "FLUX.1-dev":
+    if model_key in ["FLUX.1-schnell", "FLUX.1-dev"]:
         weights = flux_state_dict_adjustments(
             weights,
             prefix="",
