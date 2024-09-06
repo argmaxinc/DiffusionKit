@@ -142,6 +142,8 @@ def cli():
 
     height = args.height or HEIGHT[args.model_version]
     width = args.width or WIDTH[args.model_version]
+    assert height % 16 == 0, f"Height must be divisible by 16 ({height}/16={height/16})"
+    assert width % 16 == 0, f"Width must be divisible by 16 ({width}/16={width/16})"
     logger.info(f"Output image resolution will be {height}x{width}")
 
     if args.benchmark_mode:
