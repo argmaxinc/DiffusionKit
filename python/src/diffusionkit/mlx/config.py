@@ -104,7 +104,7 @@ FLUX_DEV = MMDiTConfig(
     pooled_text_embed_dim=768,  # CLIP-L/14 only
     use_qk_norm=True,
     float16_dtype=mx.bfloat16,
-    guidance_embed=True,  # Add this line
+    guidance_embed=True,
     dtype=mx.bfloat16,
 )
 
