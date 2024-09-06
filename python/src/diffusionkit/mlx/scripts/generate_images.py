@@ -13,22 +13,22 @@ logger = get_logger(__name__)
 
 # Defaults
 HEIGHT = {
-    "stable-diffusion-3-medium": 512,
+    "argmaxinc/mlx-stable-diffusion-3-medium": 512,
     "sd3-8b-unreleased": 1024,
-    "FLUX.1-schnell": 512,
-    "FLUX.1-schnell-4bit-quantized": 512,
+    "argmaxinc/mlx-FLUX.1-schnell": 512,
+    "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 512,
 }
 WIDTH = {
-    "stable-diffusion-3-medium": 512,
+    "argmaxinc/mlx-stable-diffusion-3-medium": 512,
     "sd3-8b-unreleased": 1024,
-    "FLUX.1-schnell": 512,
-    "FLUX.1-schnell-4bit-quantized": 512,
+    "argmaxinc/mlx-FLUX.1-schnell": 512,
+    "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 512,
 }
 SHIFT = {
-    "stable-diffusion-3-medium": 3.0,
+    "argmaxinc/mlx-stable-diffusion-3-medium": 3.0,
     "sd3-8b-unreleased": 3.0,
-    "FLUX.1-schnell": 1.0,
-    "FLUX.1-schnell-4bit-quantized": 1.0,
+    "argmaxinc/mlx-FLUX.1-schnell": 1.0,
+    "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 1.0,
 }
 
 
@@ -43,7 +43,7 @@ def cli():
     parser.add_argument(
         "--model-version",
         choices=tuple(MMDIT_CKPT.keys()),
-        default="FLUX.1-schnell",
+        default="argmaxinc/mlx-FLUX.1-schnell",
         help="Diffusion model version, e.g. FLUX-1.schnell, stable-diffusion-3-medium",
     )
     parser.add_argument(
@@ -127,7 +127,6 @@ def cli():
 
     # Load the models
     sd = pipeline_class(
-        model="argmaxinc/stable-diffusion",
         w16=args.w16,
         shift=shift,
         use_t5=args.t5,
@@ -143,6 +142,8 @@ def cli():
 
     height = args.height or HEIGHT[args.model_version]
     width = args.width or WIDTH[args.model_version]
+    assert height % 16 == 0, f"Height must be divisible by 16 ({height}/16={height/16})"
+    assert width % 16 == 0, f"Width must be divisible by 16 ({width}/16={width/16})"
     logger.info(f"Output image resolution will be {height}x{width}")
 
     if args.benchmark_mode:

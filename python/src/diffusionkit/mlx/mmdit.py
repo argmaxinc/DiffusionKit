@@ -958,11 +958,14 @@ def affine_transform(
     norm_module: nn.Module = None,
 ) -> mx.array:
     """Affine transformation (Used for Adaptive LayerNorm Modulation)"""
-    if norm_module is not None:
+    if x.shape[0] == 1 and norm_module is not None:
         return mx.fast.layer_norm(
             x, 1.0 + residual_scale.squeeze(), shift.squeeze(), norm_module.eps
         )
-    return x * (1.0 + residual_scale) + shift
+    elif norm_module is not None:
+        return norm_module(x) * (1.0 + residual_scale) + shift
+    else:
+        return x * (1.0 + residual_scale) + shift
 
 
 def unpatchify(

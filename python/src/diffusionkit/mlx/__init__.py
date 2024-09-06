@@ -35,20 +35,19 @@ from .sampler import FluxSampler, ModelSamplingDiscreteFlow
 logger = get_logger(__name__)
 
 MMDIT_CKPT = {
-    "stable-diffusion-3-medium": "stabilityai/stable-diffusion-3-medium",
+    "argmaxinc/mlx-stable-diffusion-3-medium": "argmaxinc/mlx-stable-diffusion-3-medium",
     "sd3-8b-unreleased": "models/sd3_8b_beta.safetensors",  # unreleased
-    "FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
-    "FLUX.1-schnell-4bit-quantized": "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized",
-    "FLUX.1-dev": "raoulritter/flux-dev-mlx",
+    "argmaxinc/mlx-FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
+    "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized",
+    "argmaxinc/mlx-FLUX.1-dev": "argmaxinc/mlx-FLUX.1-dev"
 }
 
 T5_MAX_LENGTH = {
-    "stable-diffusion-3-medium": 512,
-    "FLUX.1-schnell": 256,
-    "FLUX.1-schnell-4bit-quantized": 256,
-    "FLUX.1-dev": 512,
+    "argmaxinc/mlx-stable-diffusion-3-medium": 512,
+    "argmaxinc/mlx-FLUX.1-schnell": 256,
+    "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 256,
+    "argmaxinc/mlx-FLUX.1-dev": 512,
 }
-
 
 class DiffusionKitInferenceContext(AppleSiliconContextMixin, InferenceContextSpec):
     def code_spec(self):
@@ -61,11 +60,10 @@ class DiffusionKitInferenceContext(AppleSiliconContextMixin, InferenceContextSpe
 class DiffusionPipeline:
     def __init__(
         self,
-        model: str = _DEFAULT_MODEL,
         w16: bool = False,
         shift: float = 1.0,
         use_t5: bool = True,
-        model_version: str = "stable-diffusion-3-medium",
+        model_version: str = "argmaxinc/mlx-stable-diffusion-3-medium",
         low_memory_mode: bool = True,
         a16: bool = False,
         local_ckpt=None,
@@ -78,7 +76,7 @@ class DiffusionPipeline:
         self.use_t5 = use_t5
         self.mmdit_ckpt = MMDIT_CKPT[model_version]
         self.low_memory_mode = low_memory_mode
-        self.model = model
+        self.model = _DEFAULT_MODEL
         self.model_version = model_version
         self.sampler = ModelSamplingDiscreteFlow(shift=shift)
         self.latent_format = SD3LatentFormat()
@@ -301,6 +299,13 @@ class DiffusionPipeline:
         image_path: Optional[str] = None,
         denoise: float = 1.0,
     ):
+        # Check latent size is divisible by 2
+        assert (
+            latent_size[0] % 2 == 0
+        ), f"Height must be divisible by 16 ({latent_size[0]*8}/16={latent_size[0]/2})"
+        assert (
+            latent_size[1] % 2 == 0
+        ), f"Width must be divisible by 16 ({latent_size[1]*8}/16={latent_size[1]/2})"
         self.check_and_load_models()
         # Start timing
         start_time = time.time()
@@ -588,11 +593,10 @@ class DiffusionPipeline:
 class FluxPipeline(DiffusionPipeline):
     def __init__(
         self,
-        model: str = _DEFAULT_MODEL,
         w16: bool = False,
         shift: float = 1.0,
         use_t5: bool = True,
-        model_version: str = "FLUX.1-schnell",
+        model_version: str = "argmaxinc/mlx-FLUX.1-schnell",
         low_memory_mode: bool = True,
         a16: bool = False,
         local_ckpt=None,
@@ -605,7 +609,7 @@ class FluxPipeline(DiffusionPipeline):
         self.activation_dtype = self.float16_dtype if a16 else mx.float32
         self.mmdit_ckpt = MMDIT_CKPT[model_version]
         self.low_memory_mode = low_memory_mode
-        self.model = model
+        self.model = _DEFAULT_MODEL
         self.model_version = model_version
         self.sampler = FluxSampler(shift=shift)
         self.latent_format = FluxLatentFormat()
