@@ -298,6 +298,13 @@ class DiffusionPipeline:
         image_path: Optional[str] = None,
         denoise: float = 1.0,
     ):
+        # Check latent size is divisible by 2
+        assert (
+            latent_size[0] % 2 == 0
+        ), f"Height must be divisible by 16 ({latent_size[0]*8}/16={latent_size[0]/2})"
+        assert (
+            latent_size[1] % 2 == 0
+        ), f"Width must be divisible by 16 ({latent_size[1]*8}/16={latent_size[1]/2})"
         self.check_and_load_models()
         # Start timing
         start_time = time.time()
