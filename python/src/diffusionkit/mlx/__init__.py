@@ -655,7 +655,7 @@ class FluxPipeline(DiffusionPipeline):
             text,
             (negative_text if cfg_weight > 1 else None),
         )
-        padded_tokens_t5 = mx.zeros((1, 256)).astype(tokens_t5.dtype)
+        padded_tokens_t5 = mx.zeros((1, T5_MAX_LENGTH[self.model_version])).astype(tokens_t5.dtype)
         padded_tokens_t5[:, : tokens_t5.shape[1]] = tokens_t5[
             [0], :
         ]  # Ignore negative text
