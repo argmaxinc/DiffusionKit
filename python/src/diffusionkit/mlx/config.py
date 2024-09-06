@@ -105,7 +105,7 @@ FLUX_DEV = MMDiTConfig(
     use_qk_norm=True,
     float16_dtype=mx.bfloat16,
     guidance_embed=True,  # Add this line
-    dtype=mx.bfloat16
+    dtype=mx.bfloat16,
 )
 
 

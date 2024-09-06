@@ -39,7 +39,7 @@ MMDIT_CKPT = {
     "sd3-8b-unreleased": "models/sd3_8b_beta.safetensors",  # unreleased
     "argmaxinc/mlx-FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized",
-    "argmaxinc/mlx-FLUX.1-dev": "argmaxinc/mlx-FLUX.1-dev"
+    "argmaxinc/mlx-FLUX.1-dev": "argmaxinc/mlx-FLUX.1-dev",
 }
 
 T5_MAX_LENGTH = {
@@ -48,6 +48,7 @@ T5_MAX_LENGTH = {
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 256,
     "argmaxinc/mlx-FLUX.1-dev": 512,
 }
+
 
 class DiffusionKitInferenceContext(AppleSiliconContextMixin, InferenceContextSpec):
     def code_spec(self):

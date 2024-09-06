@@ -111,7 +111,7 @@ def cli():
     args.a16 = True
 
     if "FLUX" in args.model_version and args.cfg > 0.0:
-        logger.warning("Disabling CFG for FLUX.1-schnell model.")
+        logger.warning(f"Disabling CFG for {args.model_version} model.")
         args.cfg = 0.0
 
     if args.benchmark_mode:

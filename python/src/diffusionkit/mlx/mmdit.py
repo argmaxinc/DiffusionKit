@@ -29,7 +29,9 @@ class MMDiT(nn.Module):
         self.config = config
 
         if config.guidance_embed:
-            self.guidance_in = MLPEmbedder(in_dim=config.frequency_embed_dim, hidden_dim=config.hidden_size)
+            self.guidance_in = MLPEmbedder(
+                in_dim=config.frequency_embed_dim, hidden_dim=config.hidden_size
+            )
         else:
             self.guidance_in = nn.Identity()
 
@@ -938,6 +940,7 @@ class RoPE(nn.Module):
             .astype(in_dtype)
             .flatten(-2)
         )
+
 
 class MLPEmbedder(nn.Module):
     def __init__(self, in_dim: int, hidden_dim: int):
