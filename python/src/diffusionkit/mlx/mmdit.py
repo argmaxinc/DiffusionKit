@@ -214,7 +214,8 @@ class MMDiT(nn.Module):
         else:
             positional_encodings = None
 
-        timestep_embedding = self.guidance_in(self.t_embedder(timestep))
+        if config.guidance_embed:
+            timestep = self.guidance_in(self.t_embedder(timestep))
 
         # MultiModalTransformer layers
         if self.config.depth_multimodal > 0:
@@ -222,7 +223,7 @@ class MMDiT(nn.Module):
                 latent_image_embeddings, token_level_text_embeddings = block(
                     latent_image_embeddings,
                     token_level_text_embeddings,
-                    timestep_embedding,
+                    timestep,
                     positional_encodings=positional_encodings,
                 )
 
@@ -245,7 +246,7 @@ class MMDiT(nn.Module):
 
         latent_image_embeddings = self.final_layer(
             latent_image_embeddings,
-            timestep_embedding
+            timestep,
         )
 
         if self.config.patchify_via_reshape:
