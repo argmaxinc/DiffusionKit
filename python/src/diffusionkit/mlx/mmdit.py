@@ -214,7 +214,7 @@ class MMDiT(nn.Module):
         else:
             positional_encodings = None
 
-        if config.guidance_embed:
+        if self.config.guidance_embed:
             timestep = self.guidance_in(self.t_embedder(timestep))
 
         # MultiModalTransformer layers
@@ -236,7 +236,7 @@ class MMDiT(nn.Module):
             for bidx, block in enumerate(self.unified_transformer_blocks):
                 latent_unified_embeddings = block(
                     latent_unified_embeddings,
-                    timestep_embedding,
+                    timestep,
                     positional_encodings=positional_encodings,
                 )
 

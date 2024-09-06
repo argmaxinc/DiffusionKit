@@ -80,9 +80,9 @@ _PREFIX = {
         "vae_decoder": "decoder.",
     },
     "argmaxinc/mlx-FLUX.1-dev": {
-            "vae_encoder": "encoder.",
-            "vae_decoder": "decoder.",
-        },
+        "vae_encoder": "encoder.",
+        "vae_decoder": "decoder.",
+    },
 }
 
 _FLOAT16 = mx.bfloat16
