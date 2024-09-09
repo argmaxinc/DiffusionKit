@@ -109,7 +109,7 @@ For FLUX:
 from diffusionkit.mlx import FluxPipeline
 pipeline = FluxPipeline(
   shift=1.0,
-  model_version="argmaxinc/mlx-FLUX.1-schnell",
+  model_version="argmaxinc/mlx-FLUX.1-schnell", # model_version="argmaxinc/mlx-FLUX.1-dev" for FLUX.1-dev
   low_memory_mode=True,
   a16=True,
   w16=True,
@@ -120,7 +120,7 @@ Finally, to generate the image, use the `generate_image()` function:
 ```python
 HEIGHT = 512
 WIDTH = 512
-NUM_STEPS = 4  #  4 for FLUX.1-schnell, 50 for SD3
+NUM_STEPS = 4  #  4 for FLUX.1-schnell, 50 for SD3 and FLUX.1-dev
 CFG_WEIGHT = 0. # for FLUX.1-schnell, 5. for SD3
 
 image, _ = pipeline.generate_image(
