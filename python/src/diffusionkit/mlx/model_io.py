@@ -46,6 +46,10 @@ _MMDIT = {
         "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": "flux-schnell-4bit-quantized.safetensors",
         "vae": "ae.safetensors",
     },
+    "argmaxinc/mlx-FLUX.1-dev": {
+        "argmaxinc/mlx-FLUX.1-dev": "flux1-dev.safetensors",
+        "vae": "ae.safetensors",
+    },
 }
 _DEFAULT_MODEL = "argmaxinc/stable-diffusion"
 _MODELS = {
@@ -72,6 +76,10 @@ _PREFIX = {
         "vae_decoder": "decoder.",
     },
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": {
+        "vae_encoder": "encoder.",
+        "vae_decoder": "decoder.",
+    },
+    "argmaxinc/mlx-FLUX.1-dev": {
         "vae_encoder": "encoder.",
         "vae_decoder": "decoder.",
     },
@@ -704,7 +712,7 @@ def load_flux(
     hf_hub_download(key, "config.json")
     weights = mx.load(flux_weights_ckpt)
 
-    if model_key == "argmaxinc/mlx-FLUX.1-schnell":
+    if model_key in ["argmaxinc/mlx-FLUX.1-schnell", "argmaxinc/mlx-FLUX.1-dev"]:
         weights = flux_state_dict_adjustments(
             weights,
             prefix="",

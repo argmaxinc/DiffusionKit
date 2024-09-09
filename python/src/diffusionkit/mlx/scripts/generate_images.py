@@ -17,18 +17,21 @@ HEIGHT = {
     "sd3-8b-unreleased": 1024,
     "argmaxinc/mlx-FLUX.1-schnell": 512,
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 512,
+    "argmaxinc/mlx-FLUX.1-dev": 512,
 }
 WIDTH = {
     "argmaxinc/mlx-stable-diffusion-3-medium": 512,
     "sd3-8b-unreleased": 1024,
     "argmaxinc/mlx-FLUX.1-schnell": 512,
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 512,
+    "argmaxinc/mlx-FLUX.1-dev": 512,
 }
 SHIFT = {
     "argmaxinc/mlx-stable-diffusion-3-medium": 3.0,
     "sd3-8b-unreleased": 3.0,
     "argmaxinc/mlx-FLUX.1-schnell": 1.0,
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 1.0,
+    "argmaxinc/mlx-FLUX.1-dev": 1.0,
 }
 
 
@@ -111,7 +114,7 @@ def cli():
     args.a16 = True
 
     if "FLUX" in args.model_version and args.cfg > 0.0:
-        logger.warning("Disabling CFG for FLUX.1-schnell model.")
+        logger.warning(f"Disabling CFG for {args.model_version} model.")
         args.cfg = 0.0
 
     if args.benchmark_mode:

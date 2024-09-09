@@ -28,6 +28,13 @@ class MMDiT(nn.Module):
         super().__init__()
         self.config = config
 
+        if config.guidance_embed:
+            self.guidance_in = MLPEmbedder(
+                in_dim=config.frequency_embed_dim, hidden_dim=config.hidden_size
+            )
+        else:
+            self.guidance_in = nn.Identity()
+
         # Input adapters and embeddings
         self.x_embedder = LatentImageAdapter(config)
 
@@ -209,6 +216,9 @@ class MMDiT(nn.Module):
         else:
             positional_encodings = None
 
+        if self.config.guidance_embed:
+            timestep = self.guidance_in(self.t_embedder(timestep))
+
         # MultiModalTransformer layers
         if self.config.depth_multimodal > 0:
             for bidx, block in enumerate(self.multimodal_transformer_blocks):
@@ -236,7 +246,6 @@ class MMDiT(nn.Module):
                 :, token_level_text_embeddings.shape[1] :, ...
             ]
 
-        # Final layer
         latent_image_embeddings = self.final_layer(
             latent_image_embeddings,
             timestep,
@@ -931,6 +940,19 @@ class RoPE(nn.Module):
             .astype(in_dtype)
             .flatten(-2)
         )
+
+
+class MLPEmbedder(nn.Module):
+    def __init__(self, in_dim: int, hidden_dim: int):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+
+    def __call__(self, x):
+        return self.mlp(x)
 
 
 def affine_transform(

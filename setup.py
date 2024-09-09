@@ -3,7 +3,7 @@ import os
 from setuptools import find_packages, setup
 from setuptools.command.install import install
 
-VERSION = "0.3.5"
+VERSION = "0.4.0"
 
 
 class VersionInstallCommand(install):
@@ -29,7 +29,7 @@ setup(
         "argmaxtools>=0.1.13",
         "torch",
         "safetensors",
-        "mlx>=0.16.3",
+        "mlx>=0.17.1",
         "jaxtyping",
         "transformers",
         "pillow",

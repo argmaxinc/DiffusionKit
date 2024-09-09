@@ -32,7 +32,11 @@ pip install -e .
   <summary> Click to expand </summary>
 
 
-[Stable Diffusion 3](https://huggingface.co/stabilityai/stable-diffusion-3-medium) requires users to accept the terms before downloading the checkpoint. Once you accept the terms, sign in with your Hugging Face hub READ token as below:
+[Stable Diffusion 3](https://huggingface.co/stabilityai/stable-diffusion-3-medium) requires users to accept the terms before downloading the checkpoint.
+
+[FLUX.1-dev](https://huggingface.co/black-forest-labs/FLUX.1-dev) also requires users to accept the terms before downloading the checkpoint.
+
+Once you accept the terms, sign in with your Hugging Face hub READ token as below:
 > [!IMPORTANT]
 > If using a fine-grained token, it is also necessary to [edit permissions](https://huggingface.co/settings/tokens) to allow `Read access to contents of all public gated repos you can access`
 
@@ -89,6 +93,8 @@ Some notable optional arguments for:
 
 Please refer to the help menu for all available arguments: `diffusionkit-cli -h`.
 
+Note: When using `FLUX.1-dev`, verify you've accepted the [FLUX.1-dev licence](https://huggingface.co/black-forest-labs/FLUX.1-dev) and have allowed gated access on your [HuggingFace token](https://huggingface.co/settings/tokens)
+
 ### Code ###
 
 For Stable Diffusion 3:
@@ -109,7 +115,7 @@ For FLUX:
 from diffusionkit.mlx import FluxPipeline
 pipeline = FluxPipeline(
   shift=1.0,
-  model_version="argmaxinc/mlx-FLUX.1-schnell",
+  model_version="argmaxinc/mlx-FLUX.1-schnell", # model_version="argmaxinc/mlx-FLUX.1-dev" for FLUX.1-dev
   low_memory_mode=True,
   a16=True,
   w16=True,
@@ -120,7 +126,7 @@ Finally, to generate the image, use the `generate_image()` function:
 ```python
 HEIGHT = 512
 WIDTH = 512
-NUM_STEPS = 4  #  4 for FLUX.1-schnell, 50 for SD3
+NUM_STEPS = 4  #  4 for FLUX.1-schnell, 50 for SD3 and FLUX.1-dev
 CFG_WEIGHT = 0. # for FLUX.1-schnell, 5. for SD3
 
 image, _ = pipeline.generate_image(

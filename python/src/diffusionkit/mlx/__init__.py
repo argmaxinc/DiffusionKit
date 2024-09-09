@@ -39,12 +39,14 @@ MMDIT_CKPT = {
     "sd3-8b-unreleased": "models/sd3_8b_beta.safetensors",  # unreleased
     "argmaxinc/mlx-FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized",
+    "argmaxinc/mlx-FLUX.1-dev": "argmaxinc/mlx-FLUX.1-dev",
 }
 
 T5_MAX_LENGTH = {
     "argmaxinc/mlx-stable-diffusion-3-medium": 512,
     "argmaxinc/mlx-FLUX.1-schnell": 256,
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 256,
+    "argmaxinc/mlx-FLUX.1-dev": 512,
 }
 
 
@@ -653,7 +655,9 @@ class FluxPipeline(DiffusionPipeline):
             text,
             (negative_text if cfg_weight > 1 else None),
         )
-        padded_tokens_t5 = mx.zeros((1, 256)).astype(tokens_t5.dtype)
+        padded_tokens_t5 = mx.zeros((1, T5_MAX_LENGTH[self.model_version])).astype(
+            tokens_t5.dtype
+        )
         padded_tokens_t5[:, : tokens_t5.shape[1]] = tokens_t5[
             [0], :
         ]  # Ignore negative text
