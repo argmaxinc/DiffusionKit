@@ -1,5 +1,7 @@
 # DiffusionKit
 
+[![Latest Python Version](https://img.shields.io/pypi/v/diffusionkit)](https://pypi.org/project/diffusionkit)
+
 Run Diffusion Models on Apple Silicon with Core ML and MLX
 
 This repository comprises
