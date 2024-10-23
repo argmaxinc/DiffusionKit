@@ -818,7 +818,7 @@ class Attention(nn.Module):
         self.kv_proj_embed_dim = self.per_head_dim * n_heads
 
         # Note: key bias is redundant due to softmax invariance
-        self.k_proj = nn.Linear(embed_dim, self.kv_proj_embed_dim)
+        self.k_proj = nn.Linear(embed_dim, self.kv_proj_embed_dim, bias=False)
         self.q_proj = nn.Linear(embed_dim, embed_dim)
         self.v_proj = nn.Linear(embed_dim, self.kv_proj_embed_dim)
         self.o_proj = nn.Linear(embed_dim, embed_dim)

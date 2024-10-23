@@ -20,6 +20,7 @@ from .config import (
     AutoencoderConfig,
     CLIPTextModelConfig,
     SD3_2b,
+    SD3_8b,
     VAEDecoderConfig,
     VAEEncoderConfig,
 )
@@ -49,6 +50,10 @@ _MMDIT = {
     "argmaxinc/mlx-FLUX.1-dev": {
         "argmaxinc/mlx-FLUX.1-dev": "flux1-dev.safetensors",
         "vae": "ae.safetensors",
+    },
+    "argmaxinc/mlx-stable-diffusion-3.5-large": {
+        "argmaxinc/mlx-stable-diffusion-3.5-large": "sd3.5_large.safetensors",
+        "vae": "sd3.5_large.safetensors",
     },
 }
 _DEFAULT_MODEL = "argmaxinc/stable-diffusion"
@@ -83,17 +88,29 @@ _PREFIX = {
         "vae_encoder": "encoder.",
         "vae_decoder": "decoder.",
     },
+    "argmaxinc/mlx-stable-diffusion-3.5-large": {
+        "vae_encoder": "first_stage_model.encoder.",
+        "vae_decoder": "first_stage_model.decoder.",
+    },
+}
+
+_CONFIG = {
+    "argmaxinc/mlx-stable-diffusion-3-medium": SD3_2b,
+    "argmaxinc/mlx-FLUX.1-schnell": FLUX_SCHNELL,
+    "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": FLUX_SCHNELL,
+    "argmaxinc/mlx-FLUX.1-dev": FLUX_SCHNELL,
+    "argmaxinc/mlx-stable-diffusion-3.5-large": SD3_8b,
 }
 
 _FLOAT16 = mx.bfloat16
 
 DEPTH = {
     "argmaxinc/mlx-stable-diffusion-3-medium": 24,
-    "sd3-8b-unreleased": 38,
+    "argmaxinc/mlx-stable-diffusion-3.5-large": 38,
 }
 MAX_LATENT_RESOLUTION = {
     "argmaxinc/mlx-stable-diffusion-3-medium": 96,
-    "sd3-8b-unreleased": 192,
+    "argmaxinc/mlx-stable-diffusion-3.5-large": 192,
 }
 
 LOCAl_SD3_CKPT = None
@@ -321,6 +338,14 @@ def mmdit_state_dict_adjustments(state_dict, prefix=""):
         for k, v in state_dict.items()
     }
 
+    # Remap qk_norm
+    state_dict = {
+        k.replace(".attn.ln_q.", ".qk_norm.q_norm."): v for k, v in state_dict.items()
+    }
+    state_dict = {
+        k.replace(".attn.ln_k.", ".qk_norm.k_norm."): v for k, v in state_dict.items()
+    }
+
     # Split qkv proj and rename:
     # *transformer_block.attn.qkv.{weigth/bias}  -> transformer_block.attn.{q/k/v}_proj.{weigth/bias}
     # *transformer_block.attn.proj.{weigth/bias} -> transformer_block.attn.o_proj.{weight/bias}
@@ -346,6 +371,9 @@ def mmdit_state_dict_adjustments(state_dict, prefix=""):
 
     # Filter out VAE Decoder related tensors
     state_dict = {k: v for k, v in state_dict.items() if "decoder." not in k}
+
+    # Filter out VAE Encoder related tensors
+    state_dict = {k: v for k, v in state_dict.items() if "encoder." not in k}
 
     # Filter out k_proj.bias related tensors
     state_dict = {k: v for k, v in state_dict.items() if "k_proj.bias" not in k}
@@ -676,7 +704,7 @@ def load_mmdit(
     """Load the MM-DiT model from the checkpoint file."""
     """only_modulation_dict: Only returns the modulation dictionary"""
     dtype = _FLOAT16 if float16 else mx.float32
-    config = SD3_2b
+    config = _CONFIG[key]
     config.low_memory_mode = low_memory_mode
     model = MMDiT(config)
 
