@@ -71,7 +71,9 @@ class MMDiTConfig:
     guidance_embed: bool = False
 
 
-SD3_8b = MMDiTConfig(depth_multimodal=38, num_heads=3, upcast_multimodal_blocks=[35])
+SD3_8b = MMDiTConfig(
+    depth_multimodal=38, num_heads=38, upcast_multimodal_blocks=[35], use_qk_norm=True
+)
 
 SD3_2b = MMDiTConfig(
     depth_multimodal=24, num_heads=24, float16_dtype=mx.float16, dtype=mx.float16
