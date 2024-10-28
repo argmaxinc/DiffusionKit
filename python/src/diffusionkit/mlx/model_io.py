@@ -55,6 +55,10 @@ _MMDIT = {
         "argmaxinc/mlx-stable-diffusion-3.5-large": "sd3.5_large.safetensors",
         "vae": "sd3.5_large.safetensors",
     },
+    "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized": {
+        "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized": "sd3.5_large_4bit_quantized.safetensors",
+        "vae": "sd3.5_large_4bit_quantized.safetensors",
+    },
 }
 _DEFAULT_MODEL = "argmaxinc/stable-diffusion"
 _MODELS = {
@@ -92,6 +96,10 @@ _PREFIX = {
         "vae_encoder": "first_stage_model.encoder.",
         "vae_decoder": "first_stage_model.decoder.",
     },
+    "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized": {
+        "vae_encoder": "first_stage_model.encoder.",
+        "vae_decoder": "first_stage_model.decoder.",
+    },
 }
 
 _CONFIG = {
@@ -100,6 +108,7 @@ _CONFIG = {
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": FLUX_SCHNELL,
     "argmaxinc/mlx-FLUX.1-dev": FLUX_SCHNELL,
     "argmaxinc/mlx-stable-diffusion-3.5-large": SD3_8b,
+    "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized": SD3_8b,
 }
 
 _FLOAT16 = mx.bfloat16
@@ -107,10 +116,12 @@ _FLOAT16 = mx.bfloat16
 DEPTH = {
     "argmaxinc/mlx-stable-diffusion-3-medium": 24,
     "argmaxinc/mlx-stable-diffusion-3.5-large": 38,
+    "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized": 38,
 }
 MAX_LATENT_RESOLUTION = {
     "argmaxinc/mlx-stable-diffusion-3-medium": 96,
     "argmaxinc/mlx-stable-diffusion-3.5-large": 192,
+    "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized": 192,
 }
 
 LOCAl_SD3_CKPT = None
@@ -712,12 +723,23 @@ def load_mmdit(
     mmdit_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, mmdit_weights)
     hf_hub_download(key, "config.json")
     weights = mx.load(mmdit_weights_ckpt)
-    weights = mmdit_state_dict_adjustments(weights, prefix="model.diffusion_model.")
-    weights = {k: v.astype(dtype) for k, v in weights.items()}
+    prefix = "model.diffusion_model."
+
+    if key != "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized":
+        weights = mmdit_state_dict_adjustments(weights, prefix=prefix)
+    else:
+        nn.quantize(
+            model, class_predicate=lambda _, module: isinstance(module, nn.Linear)
+        )
+        weights = {k.replace(prefix, ""): v for k, v in weights.items() if prefix in k}
+
+    weights = {
+        k: v.astype(dtype) if v.dtype != mx.uint32 else v for k, v in weights.items()
+    }
     if only_modulation_dict:
         weights = {k: v for k, v in weights.items() if "adaLN" in k}
         return tree_flatten(weights)
-    model.update(tree_unflatten(tree_flatten(weights)))
+    model.load_weights(list(weights.items()))
 
     return model
 
@@ -852,11 +874,15 @@ def load_vae_decoder(
     vae_weights = _MMDIT[key][model_key]
     vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
     weights = mx.load(vae_weights_ckpt)
-    weights = vae_decoder_state_dict_adjustments(
-        weights, prefix=_PREFIX[key]["vae_decoder"]
-    )
+    prefix = _PREFIX[key]["vae_decoder"]
+
+    if key != "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized":
+        weights = vae_decoder_state_dict_adjustments(weights, prefix=prefix)
+    else:
+        weights = {k.replace(prefix, ""): v for k, v in weights.items() if prefix in k}
+
     weights = {k: v.astype(dtype) for k, v in weights.items()}
-    model.update(tree_unflatten(tree_flatten(weights)))
+    model.load_weights(list(weights.items()))
 
     return model
 
@@ -880,11 +906,15 @@ def load_vae_encoder(
     vae_weights = _MMDIT[key][model_key]
     vae_weights_ckpt = LOCAl_SD3_CKPT or hf_hub_download(key, vae_weights)
     weights = mx.load(vae_weights_ckpt)
-    weights = vae_encoder_state_dict_adjustments(
-        weights, prefix=_PREFIX[key]["vae_encoder"]
-    )
+    prefix = _PREFIX[key]["vae_encoder"]
+
+    if key != "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized":
+        weights = vae_encoder_state_dict_adjustments(weights, prefix=prefix)
+    else:
+        weights = {k.replace(prefix, ""): v for k, v in weights.items() if prefix in k}
+
     weights = {k: v.astype(dtype) for k, v in weights.items()}
-    model.update(tree_unflatten(tree_flatten(weights)))
+    model.load_weights(list(weights.items()))
 
     return model
 
