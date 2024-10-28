@@ -111,11 +111,7 @@ def cli():
         type=str,
         help="Path to the local mmdit checkpoint.",
     )
-    parser.add_argument(
-        "--quantized",
-        action="store_true",
-        help="Use 4-bit quantized model if available",
-    )
+
     args = parser.parse_args()
 
     args.w16 = True
@@ -132,10 +128,6 @@ def cli():
 
     if args.denoise < 0.0 or args.denoise > 1.0:
         raise ValueError("Denoising factor must be between 0.0 and 1.0")
-
-    if args.quantized and "4bit-quantized" not in args.model_version:
-        args.model_version += "-4bit-quantized"
-        logger.info(f"Using 4-bit quantized model: {args.model_version}")
 
     shift = args.shift or SHIFT[args.model_version]
     pipeline_class = FluxPipeline if "FLUX" in args.model_version else DiffusionPipeline
