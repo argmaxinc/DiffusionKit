@@ -37,6 +37,7 @@ logger = get_logger(__name__)
 MMDIT_CKPT = {
     "argmaxinc/mlx-stable-diffusion-3-medium": "argmaxinc/mlx-stable-diffusion-3-medium",
     "argmaxinc/mlx-stable-diffusion-3.5-large": "argmaxinc/mlx-stable-diffusion-3.5-large",
+    "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized": "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized",
     "argmaxinc/mlx-FLUX.1-schnell": "argmaxinc/mlx-FLUX.1-schnell",
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized",
     "argmaxinc/mlx-FLUX.1-dev": "argmaxinc/mlx-FLUX.1-dev",
@@ -45,6 +46,7 @@ MMDIT_CKPT = {
 T5_MAX_LENGTH = {
     "argmaxinc/mlx-stable-diffusion-3-medium": 512,
     "argmaxinc/mlx-stable-diffusion-3.5-large": 512,
+    "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized": 512,
     "argmaxinc/mlx-FLUX.1-schnell": 256,
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 256,
     "argmaxinc/mlx-FLUX.1-dev": 512,

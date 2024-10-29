@@ -15,6 +15,7 @@ logger = get_logger(__name__)
 HEIGHT = {
     "argmaxinc/mlx-stable-diffusion-3-medium": 512,
     "argmaxinc/mlx-stable-diffusion-3.5-large": 1024,
+    "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized": 1024,
     "argmaxinc/mlx-FLUX.1-schnell": 512,
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 512,
     "argmaxinc/mlx-FLUX.1-dev": 512,
@@ -22,6 +23,7 @@ HEIGHT = {
 WIDTH = {
     "argmaxinc/mlx-stable-diffusion-3-medium": 512,
     "argmaxinc/mlx-stable-diffusion-3.5-large": 1024,
+    "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized": 1024,
     "argmaxinc/mlx-FLUX.1-schnell": 512,
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 512,
     "argmaxinc/mlx-FLUX.1-dev": 512,
@@ -29,6 +31,7 @@ WIDTH = {
 SHIFT = {
     "argmaxinc/mlx-stable-diffusion-3-medium": 3.0,
     "argmaxinc/mlx-stable-diffusion-3.5-large": 3.0,
+    "argmaxinc/mlx-stable-diffusion-3.5-large-4bit-quantized": 3.0,
     "argmaxinc/mlx-FLUX.1-schnell": 1.0,
     "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized": 1.0,
     "argmaxinc/mlx-FLUX.1-dev": 1.0,
@@ -108,6 +111,7 @@ def cli():
         type=str,
         help="Path to the local mmdit checkpoint.",
     )
+
     args = parser.parse_args()
 
     args.w16 = True
