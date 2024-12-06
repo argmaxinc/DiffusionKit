@@ -29,7 +29,7 @@ setup(
         "argmaxtools>=0.1.13",
         "torch",
         "safetensors",
-        "mlx>=0.17.1",
+        "mlx==0.17.3",
         "jaxtyping",
         "transformers",
         "pillow",
